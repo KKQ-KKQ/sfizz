@@ -438,6 +438,7 @@ void Synth::Impl::handleControlOpcodes(const std::vector<Opcode>& members)
         case hash("octave_offset"):
             octaveOffset_ = member.read(Default::octaveOffset);
             break;
+#if 0
         case hash("hint_ram_based"):
         {
             FilePool& filePool = resources_.getFilePool();
@@ -449,6 +450,7 @@ void Synth::Impl::handleControlOpcodes(const std::vector<Opcode>& members)
                 DBG("Unsupported value for hint_ram_based: " << member.value);
             break;
         }
+#endif
         case hash("hint_stealing"):
             switch(hash(member.value)) {
             case hash("first"):
