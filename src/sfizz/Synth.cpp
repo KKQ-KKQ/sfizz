@@ -707,7 +707,11 @@ void Synth::Impl::finalizeSfzLoad()
     filePool.setRootDirectory(rootDirectory);
 
     // a string representation used for OSC purposes
+#if __cplusplus >= 202002L
+    rootPath_ = (const char*)rootDirectory.u8string().c_str();
+#else
     rootPath_ = rootDirectory.u8string();
+#endif
 
     size_t currentRegionIndex = 0;
     size_t currentRegionCount = layers_.size();

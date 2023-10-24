@@ -271,11 +271,10 @@ absl::optional<uint8_t> readNoteValue(absl::string_view value)
     ///
     std::pair<absl::string_view, int> flatSharpPrefixes[] = {
         {   "#", +1 },
-        { u8"♯", +1 },
+        { (const char*)u8"♯", +1 },
         {   "b", -1 },
-        { u8"♭", -1 },
+        { (const char*)u8"♭", -1 },
     };
-
     for (const auto& prefix : flatSharpPrefixes) {
         if (absl::StartsWith(value, prefix.first)) {
             if (prefix.second == +1) {
