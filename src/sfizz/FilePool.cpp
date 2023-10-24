@@ -179,8 +179,18 @@ bool sfz::FilePool::checkSample(std::string& filename) const noexcept
 {
     fs::path path { rootDirectory / filename };
     std::error_code ec;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    bool ret = false;
+    preexec.executeFileOpen(path, [&path, &ec, &ret]{
+        if (fs::exists(path, ec))
+            ret = true;
+    });
+    if (ret)
+        return true;
+#else
     if (fs::exists(path, ec))
         return true;
+#endif
 
 #if defined(_WIN32)
     return false;
