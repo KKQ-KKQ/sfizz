@@ -44,6 +44,9 @@
 #else
 #include <pthread.h>
 #endif
+#if defined(SFIZZ_FILEOPENPREEXEC)
+#include "FileOpenPreexec.h"
+#endif
 using namespace std::placeholders;
 
 static std::weak_ptr<ThreadPool> globalThreadPoolWeakPtr;
@@ -140,9 +143,16 @@ void streamFromFile(sfz::AudioReader& reader, sfz::FileAudioBuffer& output, std:
     }
 }
 
+#if defined(SFIZZ_FILEOPENPREEXEC)
+sfz::FilePool::FilePool(FileOpenPreexec& preexec_in)
+#else
 sfz::FilePool::FilePool()
+#endif
     : filesToLoad(alignedNew<FileQueue>()),
       threadPool(globalThreadPool())
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    , preexec(preexec_in)
+#endif
 {
     loadingJobs.reserve(config::maxVoices);
     lastUsedFiles.reserve(config::maxVoices);
@@ -302,7 +312,11 @@ absl::optional<sfz::FileInformation> sfz::FilePool::getFileInformation(const Fil
     if (!fs::exists(file))
         return {};
 
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    AudioReaderPtr reader = createAudioReader(file, fileId.isReverse(), preexec);
+#else
     AudioReaderPtr reader = createAudioReader(file, fileId.isReverse());
+#endif
     return getReaderInformation(reader.get());
 }
 
@@ -320,7 +334,11 @@ bool sfz::FilePool::preloadFile(const FileId& fileId, uint32_t maxOffset) noexce
 
     fileInformation->maxOffset = maxOffset;
     const fs::path file { rootDirectory / fileId.filename() };
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    AudioReaderPtr reader = createAudioReader(file, fileId.isReverse(), preexec);
+#else
     AudioReaderPtr reader = createAudioReader(file, fileId.isReverse());
+#endif
 
     const auto frames = static_cast<uint32_t>(reader->frames());
     const auto framesToLoad = [&]() {
@@ -392,7 +410,11 @@ sfz::FileDataHolder sfz::FilePool::loadFile(const FileId& fileId) noexcept
     }
 
     const fs::path file { rootDirectory / fileId.filename() };
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    AudioReaderPtr reader = createAudioReader(file, fileId.isReverse(), preexec);
+#else
     AudioReaderPtr reader = createAudioReader(file, fileId.isReverse());
+#endif
 
     const auto frames = static_cast<uint32_t>(reader->frames());
     auto insertedPair = loadedFiles.insert_or_assign(fileId, {
@@ -457,7 +479,11 @@ void sfz::FilePool::setPreloadSize(uint32_t preloadSize) noexcept
     for (auto& preloadedFile : preloadedFiles) {
         const auto maxOffset = preloadedFile.second.information.maxOffset;
         fs::path file { rootDirectory / preloadedFile.first.filename() };
+#if defined(SFIZZ_FILEOPENPREEXEC)
+        AudioReaderPtr reader = createAudioReader(file, preloadedFile.first.isReverse(), preexec);
+#else
         AudioReaderPtr reader = createAudioReader(file, preloadedFile.first.isReverse());
+#endif
         preloadedFile.second.preloadedData = readFromFile(*reader, preloadSize + maxOffset);
     }
 }
@@ -474,7 +500,11 @@ void sfz::FilePool::loadingJob(const QueuedFileData& data) noexcept
 
     const fs::path file { rootDirectory / id->filename() };
     std::error_code readError;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    AudioReaderPtr reader = createAudioReader(file, id->isReverse(), preexec, &readError);
+#else
     AudioReaderPtr reader = createAudioReader(file, id->isReverse(), &readError);
+#endif
 
     if (readError) {
         DBG("[sfizz] reading the file errored for " << *id << " with code " << readError << ": " << readError.message());
@@ -615,7 +645,11 @@ void sfz::FilePool::setRamLoading(bool loadInRam) noexcept
     if (loadInRam) {
         for (auto& preloadedFile : preloadedFiles) {
             fs::path file { rootDirectory / preloadedFile.first.filename() };
+#if defined(SFIZZ_FILEOPENPREEXEC)
+            AudioReaderPtr reader = createAudioReader(file, preloadedFile.first.isReverse(), preexec);
+#else
             AudioReaderPtr reader = createAudioReader(file, preloadedFile.first.isReverse());
+#endif
             preloadedFile.second.preloadedData = readFromFile(
                 *reader,
                 preloadedFile.second.information.end

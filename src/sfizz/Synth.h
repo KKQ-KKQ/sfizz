@@ -28,6 +28,9 @@ class EffectBus;
 struct Region;
 struct Layer;
 class Voice;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+class FileOpenPreexec;
+#endif
 
 using CCNamePair = std::pair<uint16_t, std::string>;
 using NoteNamePair = std::pair<uint8_t, std::string>;
@@ -739,6 +742,10 @@ public:
      * @param data         The opaque data pointer which is passed to the receiver.
      */
     void setBroadcastCallback(sfizz_receive_t* broadcast, void* data);
+
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    FileOpenPreexec &getFileOpenPreexec();
+#endif
 
 private:
     struct Impl;

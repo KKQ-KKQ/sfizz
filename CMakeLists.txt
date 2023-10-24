@@ -42,6 +42,7 @@ option_ex(SFIZZ_RELEASE_ASSERTS     "Forced assertions in release builds" OFF)
 option_ex(SFIZZ_PROFILE_BUILD       "Profile the build time" OFF)
 option_ex(SFIZZ_SNDFILE_STATIC      "Link the sndfile library statically" OFF)
 option_ex(SFIZZ_ASAN                "Use address sanitizer on all sfizz targets" OFF)
+option_ex(SFIZZ_FILEOPENPREEXEC     "Enable open file handler" OFF)
 
 # Continuous Controller count (0 to 511)
 set(MIDI_CC_COUNT 512 CACHE STRING "Maximum number of managed Control Change messages")
