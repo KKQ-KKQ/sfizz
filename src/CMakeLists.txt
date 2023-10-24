@@ -222,6 +222,15 @@ set(SFIZZ_PARSER_SOURCES
 set(SFIZZ_PARSER_OTHER sfizz/OpcodeCleanup.re)
 source_group("Other Files" FILES ${SFIZZ_PARSER_OTHER})
 
+# Enable Preopen File
+if (SFIZZ_FILEOPENPREEXEC)
+    list(APPEND SFIZZ_HEADERS
+        sfizz/FileOpenPreexec.h
+    )
+    add_compile_options("-DSFIZZ_FILEOPENPREEXEC=1")
+endif()
+
+
 # Sfizz parser library
 add_library(sfizz_parser STATIC)
 add_library(sfizz::parser ALIAS sfizz_parser)

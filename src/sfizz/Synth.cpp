@@ -59,6 +59,9 @@ Synth::~Synth()
 }
 
 Synth::Impl::Impl()
+#if defined(SFIZZ_FILEOPENPREEXEC)
+: resources_(fileOpenPreexec_)
+#endif
 {
     initializeSIMDDispatchers();
     initializeInterpolators();
@@ -646,7 +649,11 @@ bool Synth::loadSfzFile(const fs::path& file)
     fs::path realFile = fs::canonical(file, ec);
     bool success = true;
     Parser& parser = impl.parser_;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    parser.parseFile(ec ? file : realFile, impl.fileOpenPreexec_);
+#else
     parser.parseFile(ec ? file : realFile);
+#endif
 
     // permissive parsing for compatibility
     if (!loaderParsesPermissively)
@@ -673,7 +680,11 @@ bool Synth::loadSfzString(const fs::path& path, absl::string_view text)
 
     bool success = true;
     Parser& parser = impl.parser_;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    parser.parseString(path, text, impl.fileOpenPreexec_);
+#else
     parser.parseString(path, text);
+#endif
 
     // permissive parsing for compatibility
     if (!loaderParsesPermissively)
@@ -988,7 +999,17 @@ void Synth::Impl::finalizeSfzLoad()
 bool Synth::loadScalaFile(const fs::path& path)
 {
     Impl& impl = *impl_;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    bool ret = false;
+    if (!impl.fileOpenPreexec_.executeFileOpen(path, [&ret, &impl, &path] {
+        ret = impl.resources_.getTuning().loadScalaFile(path);
+    })) {
+        impl.resources_.getTuning().loadEqualTemperamentScale();
+    }
+    return ret;
+#else
     return impl.resources_.getTuning().loadScalaFile(path);
+#endif
 }
 
 bool Synth::loadScalaString(const std::string& text)
@@ -2410,5 +2431,13 @@ const Resources& Synth::getResources() const noexcept
     Impl& impl = *impl_;
     return impl.resources_;
 }
+
+#if defined(SFIZZ_FILEOPENPREEXEC)
+FileOpenPreexec &Synth::getFileOpenPreexec()
+{
+    Impl& impl = *impl_;
+    return impl.fileOpenPreexec_;
+}
+#endif
 
 } // namespace sfz
