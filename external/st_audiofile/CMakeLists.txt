@@ -22,6 +22,7 @@ target_include_directories(st_audiofile_formats
 add_subdirectory("thirdparty/libaiff" EXCLUDE_FROM_ALL)
 target_link_libraries(st_audiofile_formats PUBLIC aiff::aiff)
 
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(WAVPACK_BUILD_COOLEDIT_PLUGIN OFF)
 set(WAVPACK_BUILD_PROGRAMS OFF)
 set(WAVPACK_BUILD_WINAMP_PLUGIN OFF)
@@ -29,11 +30,9 @@ set(WAVPACK_ENABLE_LIBCRYPTO OFF)
 set(WAVPACK_INSTALL_CMAKE_MODULE OFF)
 set(WAVPACK_INSTALL_DOCS OFF)
 set(WAVPACK_INSTALL_PKGCONFIG_MODULE OFF)
-# FIXME: remove when WavPack updates their build script
-# see https://github.com/dbry/WavPack/issues/93
-if(APPLE AND PROJECT_SYSTEM_PROCESSOR MATCHES "(arm.*)")
-    SET(WAVPACK_ENABLE_ASM OFF)
-endif()
+set(WAVPACK_ENABLE_ASM OFF)
+set(WAVPACK_BUILD_DOCS OFF)
+set(WAVPACK_LEGACY ON)
 
 add_subdirectory("thirdparty/wavpack" EXCLUDE_FROM_ALL)
 target_link_libraries(st_audiofile_formats PUBLIC wavpack)

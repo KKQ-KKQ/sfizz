@@ -1337,6 +1337,7 @@ void Synth::Impl::startVoice(Layer* layer, int delay, const TriggerEvent& trigge
     if (selectedVoice == nullptr)
         return;
 
+    selectedVoice->reset();
     if (selectedVoice->startVoice(layer, delay, triggerEvent))
         ring.addVoiceToRing(selectedVoice);
 }
