@@ -708,7 +708,7 @@ void Synth::Impl::finalizeSfzLoad()
 
     // a string representation used for OSC purposes
 #if __cplusplus >= 202002L
-    rootPath_ = (const char*)rootDirectory.u8string().c_str();
+    rootPath_ = std::string((const char*)rootDirectory.u8string().c_str());
 #else
     rootPath_ = rootDirectory.u8string();
 #endif
