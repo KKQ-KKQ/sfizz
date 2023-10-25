@@ -627,15 +627,15 @@ void Synth::Impl::prepareSfzLoad(const fs::path& path)
     }
 #endif
 
+    // Set the default hdcc to their default
+    resetDefaultCCValues();
+
     if (!reloading) {
 
         // Clear the background queues and clear the filePool
         auto& filePool = resources_.getFilePool();
         filePool.waitForBackgroundLoading();
         filePool.clear();
-
-        // Set the default hdcc to their default
-        resetDefaultCCValues();
 
         // Store the new path
         lastPath_ = std::move(newPath_);
