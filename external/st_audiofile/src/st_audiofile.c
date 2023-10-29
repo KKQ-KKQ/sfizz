@@ -276,6 +276,11 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
                 flag |= (1 << st_audio_file_wav);
                 success = st_open_file_wav(filename, widepath, af);
                 if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
                     return af;
                 }
             }
@@ -283,6 +288,11 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
                 flag |= (1 << st_audio_file_flac);
                 success = st_open_file_flac(filename, widepath, af);
                 if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
                     return af;
                 }
             }
@@ -290,6 +300,11 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
                 flag |= (1 << st_audio_file_aiff);
                 success = st_open_file_aiff(filename, widepath, af);
                 if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
                     return af;
                 }
             }
@@ -297,6 +312,11 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
                 flag |= (1 << st_audio_file_ogg);
                 success = st_open_file_ogg(filename, widepath, af);
                 if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
                     return af;
                 }
             }
@@ -304,6 +324,11 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
                 flag |= (1 << st_audio_file_mp3);
                 success = st_open_file_mp3(filename, widepath, af);
                 if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
                     return af;
                 }
             }
@@ -311,6 +336,11 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
                 flag |= (1 << st_audio_file_wv);
                 success = st_open_file_wv(filename, widepath, af);
                 if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
                     return af;
                 }
             }
