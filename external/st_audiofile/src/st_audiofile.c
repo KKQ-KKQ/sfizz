@@ -245,7 +245,6 @@ static const char* get_path_extension(const char* path)
 static st_audio_file* st_generic_open_file(const void* filename, int widepath)
 {
     int success;
-    size_t filenamelength;
     unsigned int flag = 0;
 
 #if !defined(_WIN32)
@@ -271,7 +270,7 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
         }
         else
 #endif
-        filenameext = get_path_extension(filename);
+        filenameext = get_path_extension((const char*)filename);
         if (filenameext) {
             if (strcmp(filenameext, ".wav") == 0) {
                 flag |= (1 << st_audio_file_wav);
