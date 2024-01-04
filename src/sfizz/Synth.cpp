@@ -1012,7 +1012,7 @@ bool Synth::loadScalaFile(const fs::path& path)
     Impl& impl = *impl_;
 #if defined(SFIZZ_FILEOPENPREEXEC)
     bool ret = false;
-    if (!impl.fileOpenPreexec_.executeFileOpen(path, [&ret, &impl, &path] {
+    if (!impl.fileOpenPreexec_.executeFileOpen(path, [&ret, &impl](const fs::path& path) {
         ret = impl.resources_.getTuning().loadScalaFile(path);
     })) {
         impl.resources_.getTuning().loadEqualTemperamentScale();

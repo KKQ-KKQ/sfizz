@@ -181,7 +181,7 @@ bool sfz::FilePool::checkSample(std::string& filename) const noexcept
     std::error_code ec;
 #if defined(SFIZZ_FILEOPENPREEXEC)
     bool ret = false;
-    preexec.executeFileOpen(path, [&path, &ec, &ret]{
+    preexec.executeFileOpen(path, [&ec, &ret](const fs::path &path) {
         if (fs::exists(path, ec))
             ret = true;
     });
@@ -318,9 +318,6 @@ absl::optional<sfz::FileInformation> sfz::FilePool::getFileInformation(const Fil
         return existingInformation;
 
     const fs::path file { rootDirectory / fileId.filename() };
-
-    if (!fs::exists(file))
-        return {};
 
 #if defined(SFIZZ_FILEOPENPREEXEC)
     AudioReaderPtr reader = createAudioReader(file, fileId.isReverse(), preexec);

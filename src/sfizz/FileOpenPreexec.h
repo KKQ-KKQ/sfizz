@@ -12,12 +12,12 @@ namespace sfz {
 
 class FileOpenPreexec {
 public:
-    using ChildFunction = std::function<void()>;
+    using ChildFunction = std::function<void(const fs::path&)>;
     using HandlerFunction = std::function<bool(const fs::path&, ChildFunction&)>;
 
     FileOpenPreexec() :
-    handler([](const fs::path&, ChildFunction func) -> bool {
-        func();
+    handler([](const fs::path& path, ChildFunction func) -> bool {
+        func(path);
         return true;
     })
     {}
@@ -28,8 +28,8 @@ public:
             handler = handlerFunction;
         }
         else {
-            handler = [](const fs::path&, ChildFunction& func) -> bool {
-                func();
+            handler = [](const fs::path& path, ChildFunction& func) -> bool {
+                func(path);
                 return true;
             };
         }

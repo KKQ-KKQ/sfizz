@@ -138,7 +138,7 @@ void Parser::includeNewFile(const fs::path& path, std::unique_ptr<Reader> reader
 
     if (!reader) {
 #if defined(SFIZZ_FILEOPENPREEXEC)
-        preexec.executeFileOpen(fullPath, [this, &reader, &fullPath, &makeErrorRange] {
+        preexec.executeFileOpen(fullPath, [this, &reader, &makeErrorRange](const fs::path &fullPath) {
 #endif
         auto fileReader = absl::make_unique<FileReader>(fullPath);
         if (fileReader->hasError()) {
@@ -456,7 +456,7 @@ void Parser::processOpcode()
 
     std::string valueExpanded = expandDollarVars({ valueStart, valueEnd }, valueRaw);
 #if defined(SFIZZ_BLOCKLIST_OPCODES)
-    auto opcode = Opcode(nameExpanded, valueRaw);
+    auto opcode = Opcode(nameExpanded, valueExpanded);
     if (_listener) {
         auto *blockList = _listener->getOpcodesToBlock();
         if (blockList) {

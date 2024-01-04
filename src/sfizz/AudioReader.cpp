@@ -402,7 +402,7 @@ AudioReaderPtr createAudioReader(const fs::path& path, bool reverse, FileOpenPre
 {
     ST_AudioFile handle;
 #if defined(SFIZZ_FILEOPENPREEXEC)
-    preexec.executeFileOpen(path, [&handle, &path] {
+    preexec.executeFileOpen(path, [&handle](const fs::path& path) {
 #endif
 #if defined(_WIN32)
     handle.open_file_w(path.wstring().c_str());
