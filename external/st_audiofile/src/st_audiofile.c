@@ -8,6 +8,7 @@
 #if !defined(ST_AUDIO_FILE_USE_SNDFILE)
 #include "st_audiofile_libs.h"
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -37,23 +38,14 @@ struct st_audio_file {
     } alloc;
 };
 
-static st_audio_file* st_generic_open_file(const void* filename, int widepath)
+static int st_open_file_wav(const void* filename, int widepath, st_audio_file* af)
 {
-#if !defined(_WIN32)
-    if (widepath)
-        return NULL;
-#endif
-
-    st_audio_file* af = (st_audio_file*)malloc(sizeof(st_audio_file));
-    if (!af)
-        return NULL;
-
     // Try WAV
     {
         af->wav = (drwav*)malloc(sizeof(drwav));
         if (!af->wav) {
             free(af);
-            return NULL;
+            return 0;
         }
         drwav_bool32 ok =
 #if defined(_WIN32)
@@ -64,10 +56,14 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
             free(af->wav);
         else {
             af->type = st_audio_file_wav;
-            return af;
+            return 1;
         }
     }
+    return 0;
+}
 
+static int st_open_file_flac(const void* filename, int widepath, st_audio_file* af)
+{
     // Try FLAC
     {
         af->flac =
@@ -77,10 +73,14 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
             drflac_open_file((const char*)filename, NULL);
         if (af->flac) {
             af->type = st_audio_file_flac;
-            return af;
+            return 1;
         }
     }
+    return 0;
+}
 
+static int st_open_file_aiff(const void* filename, int widepath, st_audio_file* af)
+{
     // Try AIFF
     {
         af->aiff =
@@ -95,16 +95,20 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
             if (AIFF_GetAudioFormat(af->aiff, &frames, &channels, &sample_rate, NULL, NULL) == -1) {
                 AIFF_CloseFile(af->aiff);
                 free(af);
-                return NULL;
+                return 0;
             }
             af->cache.aiff.channels = (uint32_t)channels;
             af->cache.aiff.sample_rate = (float)sample_rate;
             af->cache.aiff.frames = frames;
             af->type = st_audio_file_aiff;
-            return af;
+            return 1;
         }
     }
+    return 0;
+}
 
+static int st_open_file_ogg(const void* filename, int widepath, st_audio_file* af)
+{
     // Try OGG
     {
         int err = 0;
@@ -144,22 +148,26 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
                 stb_vorbis_close(af->ogg);
                 free(alloc_buffer);
                 free(af);
-                return NULL;
+                return 0;
             }
             stb_vorbis_info info = stb_vorbis_get_info(af->ogg);
             af->cache.ogg.channels = info.channels;
             af->cache.ogg.sample_rate = info.sample_rate;
             af->type = st_audio_file_ogg;
-            return af;
+            return 1;
         }
     }
+    return 0;
+}
 
+static int st_open_file_mp3(const void* filename, int widepath, st_audio_file* af)
+{
     // Try MP3
     {
         af->mp3 = (drmp3*)malloc(sizeof(drmp3));
         if (!af->mp3) {
             free(af);
-            return NULL;
+            return 0;
         }
         drmp3_bool32 ok =
 #if defined(_WIN32)
@@ -173,25 +181,32 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
             if (af->cache.mp3.frames == 0) {
                 free(af->mp3);
                 free(af);
-                return NULL;
+                return 0;
             }
             af->type = st_audio_file_mp3;
-            return af;
+            return 1;
         }
     }
+    return 0;
+}
 
+static int st_open_file_wv(const void* filename, int widepath, st_audio_file* af)
+{
     // Try WV
     {
 #if defined(_WIN32)
-        // WavPack expects an UTF8 input and has no widechar api, so we convert the filename back...
-        unsigned wsize = wcslen(filename);
-        unsigned size = WideCharToMultiByte(CP_UTF8, 0, filename, wsize, NULL, 0, NULL, NULL);
-        char *buffer = (char*)malloc((size+1) * sizeof(char));
-        WideCharToMultiByte(CP_UTF8, 0, filename, wsize, buffer, size, NULL, NULL);
-        buffer[size] = '\0';
-        af->wv =
+        if (widepath) {
+            // WavPack expects an UTF8 input and has no widechar api, so we convert the filename back...
+            unsigned wsize = wcslen(filename);
+            unsigned size = WideCharToMultiByte(CP_UTF8, 0, filename, wsize, NULL, 0, NULL, NULL);
+            char *buffer = (char*)malloc((size+1) * sizeof(char));
+            WideCharToMultiByte(CP_UTF8, 0, filename, wsize, buffer, size, NULL, NULL);
+            buffer[size] = '\0';
+            af->wv =
             WavpackOpenFileInput(buffer, NULL, OPEN_FILE_UTF8, 0);
-        free(buffer);
+            free(buffer);
+        }
+        else
 #else
         af->wv =
             WavpackOpenFileInput((const char*)filename, NULL, 0, 0);
@@ -203,6 +218,178 @@ static st_audio_file* st_generic_open_file(const void* filename, int widepath)
             af->cache.wv.bitrate = WavpackGetBitsPerSample(af->wv);
             af->cache.wv.mode = WavpackGetMode(af->wv);
             af->type = st_audio_file_wv;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char* get_path_extension(const char* path)
+{
+    size_t path_len = strlen(path);
+    if (path_len > 0) {
+        size_t i = path_len - 1;
+        while (1) {
+            if (path[i] == '.') {
+                return &path[i];
+            }
+            if (i == 0) {
+                break;
+            }
+            i--;
+        }
+    }
+    return NULL;
+}
+
+static st_audio_file* st_generic_open_file(const void* filename, int widepath)
+{
+    int success;
+    unsigned int flag = 0;
+
+#if !defined(_WIN32)
+    if (widepath)
+        return NULL;
+#endif
+
+    st_audio_file* af = (st_audio_file*)malloc(sizeof(st_audio_file));
+    if (!af)
+        return NULL;
+
+    {
+        const char *filenameext = NULL;
+#if defined(_WIN32)
+        char *buffer = NULL;
+        if (widepath) {
+            unsigned wsize = wcslen(filename);
+            unsigned size = WideCharToMultiByte(CP_UTF8, 0, filename, wsize, NULL, 0, NULL, NULL);
+            buffer = (char*)malloc((size+1) * sizeof(char));
+            WideCharToMultiByte(CP_UTF8, 0, filename, wsize, buffer, size, NULL, NULL);
+            buffer[size] = '\0';
+            filenameext = get_path_extension(buffer);
+        }
+        else
+#endif
+        filenameext = get_path_extension((const char*)filename);
+        if (filenameext) {
+            if (strcmp(filenameext, ".wav") == 0) {
+                flag |= (1 << st_audio_file_wav);
+                success = st_open_file_wav(filename, widepath, af);
+                if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
+                    return af;
+                }
+            }
+            else if (strcmp(filenameext, ".flac") == 0) {
+                flag |= (1 << st_audio_file_flac);
+                success = st_open_file_flac(filename, widepath, af);
+                if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
+                    return af;
+                }
+            }
+            else if (strcmp(filenameext, ".aiff") == 0 || strcmp(filenameext, ".aif") == 0 || strcmp(filenameext, ".aifc") == 0) {
+                flag |= (1 << st_audio_file_aiff);
+                success = st_open_file_aiff(filename, widepath, af);
+                if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
+                    return af;
+                }
+            }
+            else if (strcmp(filenameext, ".ogg") == 0) {
+                flag |= (1 << st_audio_file_ogg);
+                success = st_open_file_ogg(filename, widepath, af);
+                if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
+                    return af;
+                }
+            }
+            else if (strcmp(filenameext, ".mp3") == 0) {
+                flag |= (1 << st_audio_file_mp3);
+                success = st_open_file_mp3(filename, widepath, af);
+                if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
+                    return af;
+                }
+            }
+            else if (strcmp(filenameext, ".wv") == 0) {
+                flag |= (1 << st_audio_file_wv);
+                success = st_open_file_wv(filename, widepath, af);
+                if (success) {
+#if defined(_WIN32)
+                    if (buffer) {
+                        free(buffer);
+                    }
+#endif
+                    return af;
+                }
+            }
+        }
+#if defined(_WIN32)
+        if (buffer) {
+            free(buffer);
+        }
+#endif
+    }
+
+    if ((flag & (1 << st_audio_file_wav)) == 0) {
+        success = st_open_file_wav(filename, widepath, af);
+        if (success) {
+            return af;
+        }
+    }
+
+    if ((flag & (1 << st_audio_file_flac)) == 0) {
+        success = st_open_file_flac(filename, widepath, af);
+        if (success) {
+            return af;
+        }
+    }
+
+    if ((flag & (1 << st_audio_file_aiff)) == 0) {
+        success = st_open_file_aiff(filename, widepath, af);
+        if (success) {
+            return af;
+        }
+    }
+
+    if ((flag & (1 << st_audio_file_ogg)) == 0) {
+        success = st_open_file_ogg(filename, widepath, af);
+        if (success) {
+            return af;
+        }
+    }
+
+    if ((flag & (1 << st_audio_file_mp3)) == 0) {
+        success = st_open_file_mp3(filename, widepath, af);
+        if (success) {
+            return af;
+        }
+    }
+
+    if ((flag & (1 << st_audio_file_wv)) == 0) {
+        success = st_open_file_wv(filename, widepath, af);
+        if (success) {
             return af;
         }
     }
