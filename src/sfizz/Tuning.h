@@ -9,7 +9,7 @@
 #include <memory>
 
 namespace Tunings {
-    class Scale;
+    struct Scale;
 }
 
 namespace sfz {
