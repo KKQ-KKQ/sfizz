@@ -181,16 +181,20 @@ bool sfz::FilePool::checkSample(std::string& filename) const noexcept
     std::error_code ec;
 #if defined(SFIZZ_FILEOPENPREEXEC)
     bool ret = false;
-    preexec.executeFileOpen(path, [&ec, &ret](const fs::path &path) {
-        if (fs::exists(path, ec))
+    preexec.executeFileOpen(path, [&ec, &ret, &path](const fs::path &path2) {
+        if (fs::exists(path2, ec)) {
             ret = true;
+            path = path2;
+        }
     });
-    if (ret)
+    if (ret) {
+        filename = fs::relative(path, rootDirectory);
         return true;
+    }
+    return false;
 #else
     if (fs::exists(path, ec))
         return true;
-#endif
 
 #if defined(_WIN32)
     return false;
@@ -247,6 +251,7 @@ bool sfz::FilePool::checkSample(std::string& filename) const noexcept
     DBG("Updating " << filename << " to " << newPath);
     filename = newPath.string();
     return true;
+#endif
 #endif
 }
 
