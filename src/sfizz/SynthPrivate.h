@@ -393,6 +393,14 @@ struct Synth::Impl final: public Parser::Listener {
 #if defined(SFIZZ_FILEOPENPREEXEC)
     FileOpenPreexec fileOpenPreexec_ {};
 #endif
+
+#if defined(SFIZZ_ADD_EXPRESSION_OPTION)
+    bool disableAddingExpr_ { false };
+#endif
+#if defined(SFIZZ_BLOCKLIST_OPCODES)
+    std::set<std::string> blocklistOpcodes_;
+    const std::set<std::string> *getOpcodesToBlock() { return &blocklistOpcodes_; }
+#endif
 };
 
 } // namespace sfz

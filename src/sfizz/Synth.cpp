@@ -441,7 +441,7 @@ void Synth::Impl::handleControlOpcodes(const std::vector<Opcode>& members)
         case hash("octave_offset"):
             octaveOffset_ = member.read(Default::octaveOffset);
             break;
-#if 0
+#if ! defined(SFIZZ_DISABLE_HINTRAMBASED)
         case hash("hint_ram_based"):
         {
             FilePool& filePool = resources_.getFilePool();
@@ -952,7 +952,12 @@ void Synth::Impl::finalizeSfzLoad()
                 ModKey::createCC(10, 1, defaultSmoothness, 0),
                 ModKey::createNXYZ(ModId::Pan, region.id)).sourceDepth = 1.0f;
         }
-        if (!usedCCs.test(11)) {
+#if defined(SFIZZ_ADD_EXPRESSION_OPTION)
+        if (!disableAddingExpr_ && !usedCCs.test(11))
+#else
+        if (!usedCCs.test(11))
+#endif
+        {
             region.getOrCreateConnection(
                 ModKey::createCC(11, 4, defaultSmoothness, 0),
                 ModKey::createNXYZ(ModId::Amplitude, region.id)).sourceDepth = 1.0f;
@@ -2440,10 +2445,32 @@ const Resources& Synth::getResources() const noexcept
 }
 
 #if defined(SFIZZ_FILEOPENPREEXEC)
-FileOpenPreexec &Synth::getFileOpenPreexec()
+FileOpenPreexec& Synth::getFileOpenPreexec()
 {
     Impl& impl = *impl_;
     return impl.fileOpenPreexec_;
+}
+#endif
+
+#if defined(SFIZZ_ADD_EXPRESSION_OPTION)
+void Synth::setDisableAddingExpression(bool disableAddingExpr)
+{
+    Impl& impl = *impl_;
+    impl.disableAddingExpr_ = disableAddingExpr;
+}
+
+bool Synth::getDisableAddingExpression()
+{
+    Impl& impl = *impl_;
+    return impl.disableAddingExpr_;
+}
+#endif
+
+#if defined(SFIZZ_BLOCKLIST_OPCODES)
+std::set<std::string> &Synth::getBlocklistOpcodes()
+{
+    Impl& impl = *impl_;
+    return impl.blocklistOpcodes_;
 }
 #endif
 

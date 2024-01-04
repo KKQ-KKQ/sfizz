@@ -230,6 +230,20 @@ if (SFIZZ_FILEOPENPREEXEC)
     add_compile_options("-DSFIZZ_FILEOPENPREEXEC=1")
 endif()
 
+# Disable hint_ram_based
+if (SFIZZ_DISABLE_HINTRAMBASED)
+    add_compile_options("-DSFIZZ_DISABLE_HINTRAMBASED=1")
+endif()
+
+# Add an expression option
+if (SFIZZ_ADD_EXPRESSION_OPT)
+    add_compile_options("-DSFIZZ_ADD_EXPRESSION_OPTION=1")
+endif()
+
+# Enable a deny list of opcodes
+if (SFIZZ_BLOCKLIST_OPCODES)
+    add_compile_options("-DSFIZZ_BLOCKLIST_OPCODES=1")
+endif()
 
 # Sfizz parser library
 add_library(sfizz_parser STATIC)

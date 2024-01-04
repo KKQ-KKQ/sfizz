@@ -16,6 +16,7 @@
 #include <bitset>
 #include <string>
 #include <vector>
+#include <set>
 template <size_t> class BitArray;
 
 namespace sfz {
@@ -745,6 +746,15 @@ public:
 
 #if defined(SFIZZ_FILEOPENPREEXEC)
     FileOpenPreexec &getFileOpenPreexec();
+#endif
+
+#if defined(SFIZZ_ADD_EXPRESSION_OPTION)
+    void setDisableAddingExpression(bool disableAddingExpr);
+    bool getDisableAddingExpression();
+#endif
+
+#if defined(SFIZZ_BLOCKLIST_OPCODES)
+    std::set<std::string> &getBlocklistOpcodes();
 #endif
 
 private:

@@ -370,7 +370,22 @@ void Parser::processOpcode()
             return true;
         });
         SourceLocation valueEnd = reader.location();
+#if defined(SFIZZ_BLOCKLIST_OPCODES)
+        auto opcode = Opcode(nameExpanded, valueRaw);
+        if (_listener) {
+            auto *blockList = _listener->getOpcodesToBlock();
+            if (blockList) {
+                for (const auto &str : *blockList) {
+                    if (opcode.nameIsEqualToString(str)) {
+                        return;
+                    }
+                }
+            }
+        }
+        _currentOpcodes.emplace_back(std::move(opcode));
+#else
         _currentOpcodes.emplace_back(nameExpanded, valueRaw);
+#endif
 
         if (_listener)
             _listener->onParseOpcode({ opcodeStart, opcodeEnd }, { valueStart, valueEnd }, nameExpanded, valueRaw);
@@ -440,7 +455,22 @@ void Parser::processOpcode()
         emitWarning({ opcodeStart, valueEnd }, "The opcode is not under any header.");
 
     std::string valueExpanded = expandDollarVars({ valueStart, valueEnd }, valueRaw);
+#if defined(SFIZZ_BLOCKLIST_OPCODES)
+    auto opcode = Opcode(nameExpanded, valueRaw);
+    if (_listener) {
+        auto *blockList = _listener->getOpcodesToBlock();
+        if (blockList) {
+            for (const auto &str : *blockList) {
+                if (opcode.nameIsEqualToString(str)) {
+                    return;
+                }
+            }
+        }
+    }
+    _currentOpcodes.emplace_back(std::move(opcode));
+#else
     _currentOpcodes.emplace_back(nameExpanded, valueExpanded);
+#endif
 
     if (_listener)
         _listener->onParseOpcode({ opcodeStart, opcodeEnd }, { valueStart, valueEnd }, nameExpanded, valueExpanded);
