@@ -256,6 +256,17 @@ bool Tuning::shouldReloadScala()
     return impl_->shouldReloadScala();
 }
 
+::Tunings::Scale Tuning::getScale()
+{
+    return impl_->tuning().scale;
+}
+
+void Tuning::setScale(const ::Tunings::Scale &scale)
+{
+    impl_->updateScale(scale);
+}
+
+
 ///
 float StretchTuning::getRatioForIntegralKey(int key) const noexcept
 {
