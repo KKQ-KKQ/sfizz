@@ -113,7 +113,7 @@ void Parser::includeNewFile(const fs::path& path, std::unique_ptr<Reader> reader
 #endif
 {
     fs::path fullPath =
-        (path.empty() || path.is_absolute()) ? path : fs::path(absl::StrCat(_originalDirectory.c_str(), "/", path.c_str()));
+        (path.empty() || path.is_absolute()) ? path : _originalDirectory / path;
 
     if (_pathsIncluded.empty())
         _originalDirectory = fullPath.parent_path();

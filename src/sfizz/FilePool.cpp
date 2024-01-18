@@ -188,7 +188,13 @@ bool sfz::FilePool::checkSample(std::string& filename) const noexcept
         }
     });
     if (ret) {
-        filename = fs::relative(path, rootDirectory);
+        auto newPath = fs::relative(path, rootDirectory, ec);
+        if (ec) {
+            DBG("Error extracting the new relative path for " << filename << " (Error code: " << ec.message() << ")");
+            return false;
+        }
+        DBG("Updating " << filename << " to " << newPath);
+        filename = newPath.string();
         return true;
     }
     return false;
