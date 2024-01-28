@@ -270,7 +270,7 @@ bool FlexEnvelope::Impl::advanceToStage(unsigned stageNumber)
     currentTime_ = 0.0f;
     updateCurrentTimeAndLevel();
     stageSustained_ = int(stageNumber) == desc.sustain;
-    stageCurve_ = &point.curve();
+    stageCurve_ = &point.curve(resources_->getCurves());
 
     return true;
 };
