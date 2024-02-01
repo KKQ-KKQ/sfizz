@@ -569,6 +569,25 @@ void sfz::Synth::dispatchMessage(Client& client, int delay, const char* path, co
         MATCH("/region&/eg&/point&/level", "f") { m.set(&FlexEGPoint::level, Default::flexEGPointLevel); } break;
         MATCH("/region&/eg&/point&/level_cc&", "") { m.reply(&FlexEGPoint::ccLevel); } break;
         MATCH("/region&/eg&/point&/level_cc&", "f") { m.set(&FlexEGPoint::ccLevel, Default::flexEGPointLevelMod); } break;
+        MATCH("/region&/eg&/point&/curve", "") { m.reply(&FlexEGPoint::curveIndex); } break;
+        MATCH("/region&/eg&/point&/curve", "i") { m.set(&FlexEGPoint::curveIndex, Default::curveCC); } break;
+        MATCH("/region&/eg&/point&/shape", "") { 
+            if (auto region = m.getRegion())
+                if (auto eg = m.getEG(*region))
+                    if (auto point = m.getEGPoint(*eg)) {
+                        auto value = point->shape();
+                        m.reply(value);
+                    }
+        } break;
+        MATCH("/region&/eg&/point&/shape", "f") {
+            if (auto region = m.getRegion())
+                if (auto eg = m.getEG(*region))
+                    if (auto point = m.getEGPoint(*eg)) {
+                        float value;
+                        m.set(value, Default::flexEGPointShape);
+                        point->setShape(value);
+                    }
+        } break;
         //----------------------------------------------------------------------
         MATCH("/voice&/trigger_value", "") { m.reply(&TriggerEvent::value); } break;
         MATCH("/voice&/trigger_number", "") { m.reply(&TriggerEvent::number); } break;
