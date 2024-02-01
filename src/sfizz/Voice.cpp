@@ -899,8 +899,12 @@ void Voice::Impl::amplitudeEnvelope(absl::Span<float> modulationSpan) noexcept
 
     // Amplitude EG
     absl::Span<const float> ampegOut(mm.getModulation(masterAmplitudeTarget_), numSamples);
-    ASSERT(ampegOut.data());
-    copy(ampegOut, modulationSpan);
+    if (!ampegOut.data()) {
+        fill(ampegOut, 0.0f);
+    }
+    else {
+        copy(ampegOut, modulationSpan);
+    }
 
     // Amplitude envelope
     applyGain1<float>(baseGain_, modulationSpan);
