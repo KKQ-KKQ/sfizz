@@ -10,12 +10,13 @@
 #include "utility/StringViewHelpers.h"
 #include <cstdint>
 
-size_t std::hash<sfz::ModKey>::operator()(const sfz::ModKey &key) const
+void sfz::ModKey::calculate_hash()
 {
-    uint64_t k = hashNumber(static_cast<int>(key.id()));
-    const sfz::ModKey::Parameters& p = key.parameters();
+    uint64_t k = hashNumber(static_cast<int>(id()));
+    k = hashNumber(region_.number(), k);
+    const sfz::ModKey::Parameters& p = parameters();
 
-    switch (key.id()) {
+    switch (id()) {
     case sfz::ModId::Controller:
         k = hashNumber(p.cc, k);
         k = hashNumber(p.curve, k);
@@ -29,5 +30,10 @@ size_t std::hash<sfz::ModKey>::operator()(const sfz::ModKey &key) const
         k = hashNumber(p.Z, k);
         break;
     }
-    return k;
+    hash_ = size_t(k);
+}
+
+size_t std::hash<sfz::ModKey>::operator()(const sfz::ModKey &key) const
+{
+    return key.hash();
 }

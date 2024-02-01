@@ -1580,6 +1580,13 @@ bool sfz::Region::parseEGOpcodeV2(const Opcode& opcode)
             return false;
         break;
 
+    case hash("eg&_curve&"):
+        if (FlexEGPoint* point = getOrCreateEGPoint())
+            point->curveIndex = opcode.read(Default::curveCC);
+        else
+            return false;
+        break;
+
     // Modulation: Flex EG (targets)
     case hash("eg&_amplitude"):
         EG_target(ModKey::createNXYZ(ModId::Amplitude, id), Default::amplitudeMod);

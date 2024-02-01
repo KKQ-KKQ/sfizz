@@ -14,6 +14,7 @@
 #include "utility/Debug.h"
 #include <absl/container/flat_hash_map.h>
 #include <absl/strings/string_view.h>
+#include <absl/strings/str_cat.h>
 #include <vector>
 #include <algorithm>
 

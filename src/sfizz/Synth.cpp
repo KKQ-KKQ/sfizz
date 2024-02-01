@@ -34,6 +34,7 @@
 #include <absl/algorithm/container.h>
 #include <absl/memory/memory.h>
 #include <absl/strings/str_replace.h>
+#include <absl/strings/str_cat.h>
 #include <absl/types/optional.h>
 #include <absl/types/span.h>
 #include <algorithm>
@@ -59,6 +60,9 @@ Synth::~Synth()
 }
 
 Synth::Impl::Impl()
+#if defined(SFIZZ_FILEOPENPREEXEC)
+: resources_(fileOpenPreexec_)
+#endif
 {
     initializeSIMDDispatchers();
     initializeInterpolators();
@@ -438,11 +442,13 @@ void Synth::Impl::handleControlOpcodes(const std::vector<Opcode>& members)
         case hash("octave_offset"):
             octaveOffset_ = member.read(Default::octaveOffset);
             break;
+#if ! defined(SFIZZ_DISABLE_HINTRAMBASED)
         case hash("hint_ram_based"):
         {
             FilePool& filePool = resources_.getFilePool();
             filePool.setRamLoading(member.read(Default::ramBased));
-        }
+        } break;
+#endif
         case hash("hint_stealing"):
             switch(hash(member.value)) {
             case hash("first"):
@@ -616,15 +622,15 @@ void Synth::Impl::prepareSfzLoad(const fs::path& path)
     }
 #endif
 
+    // Set the default hdcc to their default
+    resetDefaultCCValues();
+
     if (!reloading) {
 
         // Clear the background queues and clear the filePool
         auto& filePool = resources_.getFilePool();
         filePool.waitForBackgroundLoading();
         filePool.clear();
-
-        // Set the default hdcc to their default
-        resetDefaultCCValues();
 
         // Store the new path
         lastPath_ = std::move(newPath_);
@@ -640,7 +646,11 @@ bool Synth::loadSfzFile(const fs::path& file)
     fs::path realFile = fs::canonical(file, ec);
     bool success = true;
     Parser& parser = impl.parser_;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    parser.parseFile(ec ? file : realFile, impl.fileOpenPreexec_);
+#else
     parser.parseFile(ec ? file : realFile);
+#endif
 
     // permissive parsing for compatibility
     if (!loaderParsesPermissively)
@@ -667,7 +677,11 @@ bool Synth::loadSfzString(const fs::path& path, absl::string_view text)
 
     bool success = true;
     Parser& parser = impl.parser_;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    parser.parseString(path, text, impl.fileOpenPreexec_);
+#else
     parser.parseString(path, text);
+#endif
 
     // permissive parsing for compatibility
     if (!loaderParsesPermissively)
@@ -701,7 +715,11 @@ void Synth::Impl::finalizeSfzLoad()
     filePool.setRootDirectory(rootDirectory);
 
     // a string representation used for OSC purposes
+#if __cplusplus >= 202002L
+    rootPath_ = std::string((const char*)rootDirectory.u8string().c_str());
+#else
     rootPath_ = rootDirectory.u8string();
+#endif
 
     size_t currentRegionIndex = 0;
     size_t currentRegionCount = layers_.size();
@@ -929,7 +947,12 @@ void Synth::Impl::finalizeSfzLoad()
                 ModKey::createCC(10, 1, defaultSmoothness, 0),
                 ModKey::createNXYZ(ModId::Pan, region.id)).sourceDepth = 1.0f;
         }
-        if (!usedCCs.test(11)) {
+#if defined(SFIZZ_ADD_EXPRESSION_OPTION)
+        if (!disableAddingExpr_ && !usedCCs.test(11))
+#else
+        if (!usedCCs.test(11))
+#endif
+        {
             region.getOrCreateConnection(
                 ModKey::createCC(11, 4, defaultSmoothness, 0),
                 ModKey::createNXYZ(ModId::Amplitude, region.id)).sourceDepth = 1.0f;
@@ -982,7 +1005,17 @@ void Synth::Impl::finalizeSfzLoad()
 bool Synth::loadScalaFile(const fs::path& path)
 {
     Impl& impl = *impl_;
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    bool ret = false;
+    if (!impl.fileOpenPreexec_.executeFileOpen(path, [&ret, &impl](const fs::path& path) {
+        ret = impl.resources_.getTuning().loadScalaFile(path);
+    })) {
+        impl.resources_.getTuning().loadEqualTemperamentScale();
+    }
+    return ret;
+#else
     return impl.resources_.getTuning().loadScalaFile(path);
+#endif
 }
 
 bool Synth::loadScalaString(const std::string& text)
@@ -2412,5 +2445,35 @@ const Resources& Synth::getResources() const noexcept
     Impl& impl = *impl_;
     return impl.resources_;
 }
+
+#if defined(SFIZZ_FILEOPENPREEXEC)
+FileOpenPreexec& Synth::getFileOpenPreexec()
+{
+    Impl& impl = *impl_;
+    return impl.fileOpenPreexec_;
+}
+#endif
+
+#if defined(SFIZZ_ADD_EXPRESSION_OPTION)
+void Synth::setDisableAddingExpression(bool disableAddingExpr)
+{
+    Impl& impl = *impl_;
+    impl.disableAddingExpr_ = disableAddingExpr;
+}
+
+bool Synth::getDisableAddingExpression()
+{
+    Impl& impl = *impl_;
+    return impl.disableAddingExpr_;
+}
+#endif
+
+#if defined(SFIZZ_BLOCKLIST_OPCODES)
+std::set<std::string> &Synth::getBlocklistOpcodes()
+{
+    Impl& impl = *impl_;
+    return impl.blocklistOpcodes_;
+}
+#endif
 
 } // namespace sfz

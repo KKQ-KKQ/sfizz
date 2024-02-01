@@ -36,7 +36,7 @@
 #include "utility/Timing.h"
 #include "utility/LeakDetector.h"
 #include "utility/MemoryHelpers.h"
-#include <ghc/fs_std.hpp>
+#include "utility/ghc.hpp"
 #include <absl/container/flat_hash_map.h>
 #include <absl/types/optional.h>
 #include <absl/strings/string_view.h>
@@ -48,6 +48,10 @@
 class ThreadPool;
 
 namespace sfz {
+#if defined(SFIZZ_FILEOPENPREEXEC)
+class FileOpenPreexec;
+#endif
+
 using FileAudioBuffer = AudioBuffer<float, 2, config::defaultAlignment,
                                     sfz::config::excessFileFrames, sfz::config::excessFileFrames>;
 using FileAudioBufferPtr = std::shared_ptr<FileAudioBuffer>;
@@ -194,7 +198,11 @@ public:
      * This creates the background threads based on config::numBackgroundThreads
      * as well as the garbage collection thread.
      */
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    FilePool(FileOpenPreexec& preexec);
+#else
     FilePool();
+#endif
 
     ~FilePool();
     /**
@@ -381,5 +389,9 @@ private:
     absl::flat_hash_map<FileId, FileData> preloadedFiles;
     absl::flat_hash_map<FileId, FileData> loadedFiles;
     LEAK_DETECTOR(FilePool);
+
+#if defined(SFIZZ_FILEOPENPREEXEC)
+    FileOpenPreexec &preexec;
+#endif
 };
 }

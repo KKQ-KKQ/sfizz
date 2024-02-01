@@ -13,7 +13,7 @@
 #include "sfizz/modulations/ModKey.h"
 #include "sfizz/utility/bit_array/BitArray.h"
 #include "catch2/catch.hpp"
-#include "ghc/fs_std.hpp"
+#include "sfizz/utility/ghc.hpp"
 #if defined(__APPLE__)
 #include <unistd.h> // pathconf
 #endif
