@@ -1876,12 +1876,12 @@ sfz::Region::Connection& sfz::Region::getOrCreateConnection(const ModKey& source
     if (Connection* c = getConnection(source, target))
         return *c;
 
-    sfz::Region::Connection c;
+    connections.emplace_back();
+    sfz::Region::Connection& c = connections.back();
     c.source = source;
     c.target = target;
 
-    connections.push_back(c);
-    return connections.back();
+    return c;
 }
 
 sfz::Region::Connection* sfz::Region::getConnectionFromCC(int sourceCC, const ModKey& target)

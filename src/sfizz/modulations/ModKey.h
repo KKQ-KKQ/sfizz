@@ -111,7 +111,8 @@ private:
     Parameters params_ {};
     // Memorize the flag
     int flags_;
-    size_t hash_;
+    // Hash number
+    size_t hash_ = size_t(16806506973555142816ULL);
 };
 
 

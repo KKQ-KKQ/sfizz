@@ -97,7 +97,7 @@ constexpr uint64_t hashNoAmpersand(absl::string_view s, uint64_t h = Fnv1aBasis)
  *        create hash functions for keys which depend on numeric values.
  */
 template <class Int>
-uint64_t hashNumber(Int i, uint64_t h = Fnv1aBasis)
+constexpr uint64_t hashNumber(Int i, uint64_t h = Fnv1aBasis)
 {
     static_assert(std::is_arithmetic<Int>::value,
                   "The hashed object must be of arithmetic type");

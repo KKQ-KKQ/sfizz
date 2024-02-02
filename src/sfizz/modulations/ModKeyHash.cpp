@@ -12,6 +12,20 @@
 
 void sfz::ModKey::calculate_hash()
 {
+#if ! defined(NDEBUG)
+    static bool once = false;
+    if (!once) {
+        once = true;
+        ModKey m;
+        size_t h = m.hash();
+        m.calculate_hash();
+        if (h != m.hash()) {
+            printf("ModKey default hash is %llu\n", (uint64_t)m.hash());
+            assert(false && "Number of variables is wrong. Needs updating the default hash.");
+        }
+    }
+#endif
+
     uint64_t k = hashNumber(static_cast<int>(id()));
     k = hashNumber(region_.number(), k);
     const sfz::ModKey::Parameters& p = parameters();

@@ -514,10 +514,10 @@ std::string ModMatrix::toDotGraph() const
     for (const Impl::Target& target : impl.targets_) {
         for (const auto& cs : target.connectedSources) {
             const Impl::Source& source = impl.sources_[cs.first];
-            Edge e;
+            edges.emplace_back();
+            Edge& e = edges.back();
             e.source = source.key.toString();
             e.target = target.key.toString();
-            edges.push_back(std::move(e));
         }
     }
 
