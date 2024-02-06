@@ -161,7 +161,6 @@ TEST_CASE("[FilePool] Shared samples")
         TestSynthThread()
         {
             synth.setSamplesPerBlock(256);
-            synth.loadSfzFile(fs::current_path() / "tests/TestFiles/looped_regions.sfz");
         }
 
         ~TestSynthThread()
@@ -175,9 +174,14 @@ TEST_CASE("[FilePool] Shared samples")
 
         void job() noexcept
         {
-            while (semBarrier.wait(), running) {
-                synth.renderBlock(buffer);
-                execution();
+            semBarrier.wait();
+            synth.loadSfzFile(fs::current_path() / "tests/TestFiles/looped_regions.sfz");
+            execution();
+            if (running) {
+                while (semBarrier.wait(), running) {
+                    synth.renderBlock(buffer);
+                    execution();
+                }
             }
         }
 
@@ -216,6 +220,16 @@ TEST_CASE("[FilePool] Shared samples")
         synthThreads[i].execution = countFunc;
     }
 
+    finishCount = 0;
+    for (unsigned j = 0; j < synthCount; ++j) {
+        synthThreads[j].trigger();
+    }
+    int count = 0;
+    while (finishCount != synthCount) {
+        CHECK(++count < 65536);
+        WAIT(100);
+    }
+
     for (unsigned i = 0; i < synthCount; ++i) {
         CHECK(synthThreads[i].synth.getNumPreloadedSamples() == 1);
         CHECK(synthThreads[i].synth.getResources().getFilePool().getActualNumPreloadedSamples() == 1);
@@ -248,5 +262,42 @@ TEST_CASE("[FilePool] Shared samples")
         }
     }
 
+    synth1.reset(new sfz::Synth());
     synthThreads.reset();
+
+    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 0);
+
+    struct TestThread {
+        TestThread(std::function<void()> execution) : execution(execution) {}
+        void job() noexcept
+        {
+            execution();
+            done = true;
+        }
+        ~TestThread()
+        {
+            if (done) {
+                thread.join();
+            }
+        }
+
+        bool done { false };
+        std::thread thread { &TestThread::job, this };
+        std::function<void()> execution;
+    };
+    {
+        sfz::FileData fileData1;
+        sfz::FileData fileData2;
+        bool done = false;
+        TestThread thread {
+            [&fileData1, &done](){
+                fileData1.waitForInitialize();
+                done = true;
+            }
+        };
+        WAIT(300);
+        fileData1.initWith(sfz::FileData::Status::Invalid, std::move(fileData2));
+        WAIT(1000);
+        CHECK(done);
+    }
 }
