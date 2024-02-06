@@ -115,17 +115,39 @@ struct FileData
     std::chrono::time_point<std::chrono::high_resolution_clock> lastViewerLeftAt;
 
 public:
+    /**
+     * @fn
+     * incrCountForFilePool
+     * @brief increment preloadCallCount
+     * @param (filePool) called by this param
+     * @return true if the filePool is new and the preloadCallCount increments.
+     * @detail
+     * This function must be called with a mutex lock.
+     */
     bool incrCountForFilePool(const FilePool* filePool)
     {
-        auto& hasValue = preloadCallCountMap[filePool];
-        bool prevValue = hasValue;
-        hasValue = true;
-        if (!prevValue) {
+        auto it = preloadCallCountMap.find(filePool);
+        bool hasValue = (it != preloadCallCountMap.end());
+        if (!hasValue) {
+            preloadCallCountMap[filePool] = true;
             preloadCallCount += 2;
             return true;
         }
+        if (!it->second) {
+            ++preloadCallCount;
+            it->second = true;
+        }
         return false;
     }
+
+    /**
+     * @fn
+     * decrCountForFilePool
+     * @brief decrement preloadCallCount
+     * @param (filePool) called by this param
+     * @detail
+     * This function must be called with a mutex lock.
+     */
     void decrCountForFilePool(const FilePool* filePool)
     {
         auto it = preloadCallCountMap.find(filePool);
@@ -134,6 +156,15 @@ public:
             preloadCallCount--;
         }
     }
+    /**
+     * @fn
+     * checkFilePool
+     * @brief forget the reference and decrement preloadCallCount
+     * @param (filePool) called by this param
+     * @return true if the filePool exists and the preloadCallCount decrements.
+     * @detail
+     * This function must be called with a mutex lock.
+     */
     bool checkFilePool(const FilePool* filePool)
     {
         auto it = preloadCallCountMap.find(filePool);
@@ -144,7 +175,12 @@ public:
         }
         return false;
     }
-    int getPreloadCallCount() { return preloadCallCount; }
+    /**
+     * @fn
+     * getPreloadCallCount
+     * @brief get the preloadCallCount value.
+     */
+    int getPreloadCallCount() { return preloadCallCount + readerCount; }
 
     bool contains(const FilePool *filePool) const
     {
@@ -157,7 +193,7 @@ public:
 private:
     int preloadCallCount { 0 };
     std::map<const FilePool*, bool> preloadCallCountMap;
-    bool initialized { false };
+    std::atomic<bool> initialized { false };
 
 public:
 
