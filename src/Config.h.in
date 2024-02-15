@@ -33,7 +33,7 @@ namespace config {
     constexpr bool loggingEnabled { false };
     constexpr size_t maxChannels { 32 };
     constexpr int numBackgroundThreads { 4 };
-    constexpr unsigned fileClearingPeriod { 5 }; // in seconds
+    constexpr unsigned fileClearingPeriod { 1 }; // in seconds
     constexpr int numVoices { 64 };
     constexpr unsigned maxVoices { 256 };
     constexpr unsigned smoothingSteps { 512 };
@@ -58,6 +58,7 @@ namespace config {
     constexpr uint16_t numCCs { @MIDI_CC_COUNT@ };
     constexpr int maxCurves { 256 };
     constexpr int fileChunkSize { 1024 };
+    constexpr int numChunkForLoadingAtOnce { 64 };
     constexpr int processChunkSize { 16 };
     constexpr unsigned int defaultAlignment { 16 };
     constexpr int filtersInPool { maxVoices * 2 };

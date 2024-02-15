@@ -1079,7 +1079,8 @@ void Voice::Impl::fillWithData(AudioSpan<float> buffer) noexcept
         return;
     }
 
-    auto source = currentPromise_->getData();
+    auto sourceContainer = currentPromise_->getData();
+    auto& source = sourceContainer.data;
     if (source.getNumFrames() == 0) {
         DBG("[Voice] Empty source in promise");
         return;

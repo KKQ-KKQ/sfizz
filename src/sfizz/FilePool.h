@@ -45,12 +45,14 @@
 #include <thread>
 #include <future>
 #include <memory>
+class ThreadPool;
 
 namespace sfz {
+class FilePool;
+struct SynthConfig;
 #if defined(SFIZZ_FILEOPENPREEXEC)
 class FileOpenPreexec;
 #endif
-class FilePool;
 
 using FileAudioBuffer = AudioBuffer<float, 2, config::defaultAlignment,
                                     sfz::config::excessFileFrames, sfz::config::excessFileFrames>;
@@ -71,28 +73,57 @@ struct FileInformation {
 // Strict C++11 disallows member initialization if aggregate initialization is to be used...
 struct FileData
 {
-    enum class Status { Invalid, Preloaded, Streaming, Done };
+    enum class Status { Invalid, Preloaded, PendingStreaming, Streaming, Done, FullLoaded };
     FileData() = default;
-    FileData(FileAudioBuffer preloaded, FileInformation info)
-    : preloadedData(std::move(preloaded)), information(std::move(info))
+    FileData(FileAudioBuffer preloaded, const FileInformation& info)
+    : preloadedData(std::move(preloaded)), information(info)
     {
 
     }
-    AudioSpan<const float> getData()
+
+    struct AudioSpanData {
+        AudioSpanData(AudioSpanData&& other)
+        : data(other.data),
+          fileData(other.fileData)
+        {}
+
+        AudioSpan<const float> data;
+
+        friend struct FileData;
+    private:
+        AudioSpanData(AudioSpan<const float>&& data, FileData& fileData)
+        : data(data),
+          fileData(fileData)
+        {
+            ASSERT(fileData.readerCount > 0);
+            fileData.readerCount++;
+        }
+
+    public:
+        ~AudioSpanData() {
+            fileData.lastViewerLeftAt = highResNow();
+            fileData.readerCount--;
+        }
+
+    private:
+        FileData& fileData;
+    };
+
+    AudioSpanData getData()
     {
+        ASSERT(readerCount > 0);
         if (availableFrames > preloadedData.getNumFrames())
-            return AudioSpan<const float>(fileData).first(availableFrames);
+            return { AudioSpan<const float>(fileData).first(availableFrames), *this };
         else
-            return AudioSpan<const float>(preloadedData);
-    }
+            return { AudioSpan<const float>(preloadedData), *this };
+    };
 
     FileData(const FileData& other) = delete;
     FileData& operator=(const FileData& other) = delete;
     FileData(FileData&& other) = delete;
     FileData& operator=(FileData&& other) = delete;
 
-    FileData& initWith(Status status_in, FileData&& other)
-    {
+    void initWith(Status newStatus, FileData&& other) {
         ASSERT(other.readerCount == 0); // Probably should not be moving this...
         ASSERT(other.preloadCallCount == 0);
         information = std::move(other.information);
@@ -100,102 +131,39 @@ struct FileData
         fileData = std::move(other.fileData);
         availableFrames = other.availableFrames.load();
         lastViewerLeftAt = other.lastViewerLeftAt;
-        status = status_in;
-        initialized = true;
-        return *this;
+        status = newStatus;
+        {
+            std::lock_guard<std::mutex> guard { readyMutex };
+            ready = true;
+        }
+        readyCond.notify_all();
     }
+
+    void addOwner(FilePool* owner);
+    void prepareForRemovingOwner(FilePool* owner);
+    bool checkAndRemoveOwner(FilePool* owner, const FileId &fileId);
+    bool addSecondaryOwner(FilePool* owner);
+    bool canRemove() const { return preloadCallCount == 0 && ready; };
+    bool isReady() { return ready; }
 
     FileAudioBuffer preloadedData;
     FileInformation information;
     FileAudioBuffer fileData {};
 
+private:
+    bool ready { false };
+    std::condition_variable readyCond;
+    std::mutex readyMutex;
+    std::mutex ownerMutex;
+    int preloadCallCount { 0 };
+    std::map<FilePool*, bool> ownerMap;
+
+public:
+    SpinMutex garbageMutex;
     std::atomic<Status> status { Status::Invalid };
     std::atomic<size_t> availableFrames { 0 };
-    std::atomic<int> readerCount { 0 };
+    std::atomic<uint32_t> readerCount { 0 };
     std::chrono::time_point<std::chrono::high_resolution_clock> lastViewerLeftAt;
-
-public:
-    /**
-     * @fn
-     * incrCountForFilePool
-     * @brief increment preloadCallCount
-     * @param (filePool) called by this param
-     * @return true if the filePool is new and the preloadCallCount increments.
-     * @detail
-     * This function must be called with a mutex lock.
-     */
-    bool incrCountForFilePool(const FilePool* filePool)
-    {
-        auto it = preloadCallCountMap.find(filePool);
-        bool hasValue = (it != preloadCallCountMap.end());
-        if (!hasValue) {
-            preloadCallCountMap[filePool] = true;
-            preloadCallCount += 2;
-            return true;
-        }
-        if (!it->second) {
-            ++preloadCallCount;
-            it->second = true;
-        }
-        return false;
-    }
-
-    /**
-     * @fn
-     * decrCountForFilePool
-     * @brief decrement preloadCallCount
-     * @param (filePool) called by this param
-     * @detail
-     * This function must be called with a mutex lock.
-     */
-    void decrCountForFilePool(const FilePool* filePool)
-    {
-        auto it = preloadCallCountMap.find(filePool);
-        if (it != preloadCallCountMap.end() && it->second) {
-            it->second = false;
-            preloadCallCount--;
-        }
-    }
-    /**
-     * @fn
-     * checkFilePool
-     * @brief forget the reference and decrement preloadCallCount
-     * @param (filePool) called by this param
-     * @return true if the filePool exists and the preloadCallCount decrements.
-     * @detail
-     * This function must be called with a mutex lock.
-     */
-    bool checkFilePool(const FilePool* filePool)
-    {
-        auto it = preloadCallCountMap.find(filePool);
-        if (it != preloadCallCountMap.end() && !it->second) {
-            preloadCallCount--;
-            preloadCallCountMap.erase(it);
-            return true;
-        }
-        return false;
-    }
-    /**
-     * @fn
-     * getPreloadCallCount
-     * @brief get the preloadCallCount value.
-     */
-    int getPreloadCallCount() { return preloadCallCount + readerCount; }
-
-    bool contains(const FilePool *filePool) const
-    {
-        return preloadCallCountMap.find(filePool) != preloadCallCountMap.end();
-    }
-
-    bool isInitialized() { return initialized; }
-    void waitForInitialize();
-    
-private:
-    int preloadCallCount { 0 };
-    std::map<const FilePool*, bool> preloadCallCountMap;
-    std::atomic<bool> initialized { false };
-
-public:
 
     LEAK_DETECTOR(FileData);
 };
@@ -222,6 +190,8 @@ public:
         if (!data)
             return;
 
+        // short time spin lock
+        std::lock_guard<SpinMutex> guard { data->garbageMutex };
         data->readerCount += 1;
     }
     void reset()
@@ -229,20 +199,19 @@ public:
         if (!data)
             return;
 
-        data->readerCount -= 1;
         data->lastViewerLeftAt = highResNow();
-        data.reset();
+        data->readerCount -= 1;
+        data = nullptr;
     }
     ~FileDataHolder()
     {
-        ASSERT(!data || data->readerCount > 0);
         reset();
     }
     FileData& operator*() { return *data; }
     FileData* operator->() { return data.get(); }
-    explicit operator bool() const { return bool(data); }
+    explicit operator bool() const { return (bool)data; }
 private:
-    std::shared_ptr<FileData> data;
+    std::shared_ptr<FileData> data { nullptr };
     LEAK_DETECTOR(FileDataHolder);
 };
 
@@ -275,9 +244,9 @@ public:
      * as well as the garbage collection thread.
      */
 #if defined(SFIZZ_FILEOPENPREEXEC)
-    FilePool(FileOpenPreexec& preexec);
+    FilePool(const SynthConfig& synthConfig, FileOpenPreexec& preexec);
 #else
-    FilePool();
+    FilePool(const SynthConfig& synthConfig);
 #endif
 
     ~FilePool();
@@ -292,21 +261,7 @@ public:
      *
      * @return size_t
      */
-    size_t getNumPreloadedSamples() const noexcept { return numPreloadedSamples; }
-
-    /**
-     * @brief Get the actual number of preloaded sample files
-     *
-     * @return size_t
-     */
-    size_t getActualNumPreloadedSamples() const;
-
-    /**
-     * @brief Get the global number of preloaded sample files
-     *
-     * @return size_t
-     */
-    size_t getGlobalNumPreloadedSamples() const;
+    size_t getNumPreloadedSamples() const noexcept { return preloadedFiles.size() + loadedFiles.size(); }
 
     /**
      * @brief Get metadata information about a file.
@@ -428,16 +383,36 @@ public:
      * @param loadInRam
      */
     void setRamLoading(bool loadInRam) noexcept;
+
     /**
-     * @brief Prepares unused data to be freed on a background thread.
-     * This should be called regularly by the Synth, otherwise memory
-     * risk building up.
+     * @brief Notify when render starts 
      */
-    void triggerGarbageCollection() noexcept;
+    void startRender();
 
-    // Structures for the global object
-    struct GlobalObject;
+    /**
+     * @brief Notify when render finishes
+     */
+    void stopRender();
 
+    /**
+     * @brief Allocate this when rendering
+     */
+    class RenderLock
+    {
+        public:
+        RenderLock(FilePool& filePool)
+        : filePool(filePool)
+        {
+            filePool.startRender();
+        }
+        ~RenderLock()
+        {
+            filePool.stopRender();
+        }
+
+        private:
+        FilePool& filePool;
+    };
 private:
 
     absl::optional<sfz::FileInformation> checkExistingFileInformation(const FileId& fileId) noexcept;
@@ -448,9 +423,7 @@ private:
 
     // Signals
     volatile bool dispatchFlag { true };
-    volatile bool garbageFlag { true };
-    RTSemaphore dispatchBarrier;
-    RTSemaphore semGarbageBarrier;
+    RTSemaphore dispatchBarrier { 0 };
 
     // Structures for the background loaders
     struct QueuedFileData
@@ -459,26 +432,63 @@ private:
         QueuedFileData(std::weak_ptr<FileId> id, const std::shared_ptr<FileData>& data) noexcept
         : id(id), data(data) {}
         std::weak_ptr<FileId> id;
-        std::shared_ptr<FileData> data;
+        std::shared_ptr<FileData> data { nullptr };
     };
 
     using FileQueue = atomic_queue::AtomicQueue2<QueuedFileData, config::maxVoices>;
     aligned_unique_ptr<FileQueue> filesToLoad;
 
     void dispatchingJob() noexcept;
-    void garbageJob() noexcept;
     void loadingJob(const QueuedFileData& data) noexcept;
     std::mutex loadingJobsMutex;
     std::vector<std::future<void>> loadingJobs;
     std::thread dispatchThread { &FilePool::dispatchingJob, this };
-    std::thread garbageThread { &FilePool::garbageJob, this };
 
-    SpinMutex lastUsedMutex;
-    std::vector<FileId> lastUsedFiles;
+public:
+    struct GlobalObject
+    {
+        friend class sfz::FilePool;
+        friend struct sfz::FileData;
+        GlobalObject(size_t num_threads);
 
-    std::shared_ptr<GlobalObject> globalObj;
-    size_t numPreloadedSamples { 0 };
+        public:
+        ~GlobalObject();
 
+        public:
+        size_t getNumLoadedSamples() {
+            return loadedFiles.size() + preloadedFiles.size();
+        }
+
+        private:
+        volatile bool garbageFlag { true };
+        std::atomic<uint32_t> runningRender = { 0 };
+        std::chrono::time_point<std::chrono::high_resolution_clock> lastGarbageCollection_ = {};
+        std::unique_ptr<std::thread> garbageThread {};
+        // this semaphore should be static in mac.
+        static RTSemaphore semGarbageBarrier;
+        void garbageJob();
+
+        std::unique_ptr<ThreadPool> threadPool;
+
+        std::mutex loadedFilesMutex;
+        std::mutex preloadedFilesMutex;
+
+        // Preloaded data
+        absl::flat_hash_map<FileId, std::shared_ptr<FileData>> preloadedFiles;
+        absl::flat_hash_map<FileId, std::shared_ptr<FileData>> loadedFiles;
+    };
+    static std::shared_ptr<GlobalObject> getGlobalObject();
+
+private:
+    std::shared_ptr<GlobalObject> globalObject;
+    static std::weak_ptr<GlobalObject> globalObjectWeakPtr;
+    static std::mutex globalObjectMutex;
+
+    // Preloaded data
+    absl::flat_hash_map<FileId, std::shared_ptr<FileData>> preloadedFiles;
+    absl::flat_hash_map<FileId, std::shared_ptr<FileData>> loadedFiles;
+
+    const SynthConfig& synthConfig;
     LEAK_DETECTOR(FilePool);
 
 #if defined(SFIZZ_FILEOPENPREEXEC)

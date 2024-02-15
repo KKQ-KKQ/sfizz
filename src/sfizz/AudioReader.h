@@ -7,7 +7,6 @@
 #pragma once
 #include "absl/types/span.h"
 #include "utility/ghc.hpp"
-#include <st_audiofile.h>
 #include <system_error>
 #include <memory>
 #include <cstdio>
@@ -43,6 +42,8 @@ public:
     virtual unsigned channels() const = 0;
     virtual unsigned sampleRate() const = 0;
     virtual size_t readNextBlock(float* buffer, size_t frames) = 0;
+    virtual bool seekable() const = 0;
+    virtual bool seek(uint64_t position) = 0;
     virtual bool getInstrumentInfo(InstrumentInfo&) { return false; };
     virtual bool getWavetableInfo(WavetableInfo&) { return false; };
 };

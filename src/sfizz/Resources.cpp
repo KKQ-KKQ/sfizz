@@ -20,7 +20,9 @@ namespace sfz {
 
 struct Resources::Impl {
 #if defined(SFIZZ_FILEOPENPREEXEC)
-    Impl(FileOpenPreexec& preexec_in) : filePool(preexec_in) {}
+    Impl(FileOpenPreexec& preexec_in) : filePool {synthConfig, preexec_in} {}
+#else
+    Impl() : filePool(synthConfig) {}
 #endif
     SynthConfig synthConfig;
     BufferPool bufferPool;

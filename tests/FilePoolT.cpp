@@ -8,6 +8,7 @@
 #include "absl/types/span.h"
 #include "sfizz/Synth.h"
 #include "sfizz/FilePool.h"
+#include "sfizz/SynthConfig.h"
 #include "TestHelpers.h"
 #include "catch2/catch.hpp"
 #include <algorithm>
@@ -17,11 +18,39 @@
 #include <memory>
 #include <functional>
 #include <atomic>
+
 using namespace Catch::literals;
 
-static void WAIT(int ms)
+static void wait_ms(int ms)
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
+TEST_CASE("[FilePool] Ready Mutex")
+{
+    struct ProcessData
+    {
+        sfz::SynthConfig config;
+        sfz::FileData fileData {};
+        sfz::FilePool filePool1 {config};
+        sfz::FilePool filePool2 {config};
+        void prepare()
+        {
+            fileData.addOwner(&filePool1);
+            wait_ms(20);
+            fileData.initWith(sfz::FileData::Status::Preloaded, sfz::FileData());
+        }
+        void wait()
+        {
+            CHECK(fileData.addSecondaryOwner(&filePool2));
+        }
+    };
+    ProcessData p;
+    std::thread t1([&p] { p.wait(); });
+    std::thread t2([&p] { p.prepare(); });
+    t1.join();
+    t2.join();
+    ASSERT(1);
 }
 
 TEST_CASE("[FilePool] Shared samples")
@@ -29,6 +58,9 @@ TEST_CASE("[FilePool] Shared samples")
     std::unique_ptr<sfz::Synth> synth1 { new sfz::Synth() };
     std::unique_ptr<sfz::Synth> synth2 { new sfz::Synth() };
     std::unique_ptr<sfz::Synth> synth3 { new sfz::Synth() };
+    std::shared_ptr<sfz::FilePool::GlobalObject> filePoolGlobalObj { sfz::FilePool::getGlobalObject() };
+
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 0);
 
     synth1->setSamplesPerBlock(256);
     synth2->setSamplesPerBlock(256);
@@ -39,24 +71,14 @@ TEST_CASE("[FilePool] Shared samples")
     CHECK(synth1->getNumPreloadedSamples() == 1);
     CHECK(synth2->getNumPreloadedSamples() == 0);
     CHECK(synth3->getNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth3->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 1);
 
     synth2->loadSfzFile(fs::current_path() / "tests/TestFiles/looped_regions.sfz");
 
     CHECK(synth1->getNumPreloadedSamples() == 1);
     CHECK(synth2->getNumPreloadedSamples() == 1);
     CHECK(synth3->getNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 1);
 
     sfz::AudioBuffer<float> buffer { 2, 256 };
 
@@ -65,122 +87,146 @@ TEST_CASE("[FilePool] Shared samples")
     CHECK(synth1->getNumPreloadedSamples() == 1);
     CHECK(synth2->getNumPreloadedSamples() == 0);
     CHECK(synth3->getNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth3->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 1);
 
     synth2->loadSfzFile(fs::current_path() / "tests/TestFiles/looped_regions.sfz");
 
     CHECK(synth1->getNumPreloadedSamples() == 1);
     CHECK(synth2->getNumPreloadedSamples() == 1);
     CHECK(synth3->getNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-
-// Crash test
-    synth1->noteOn(0, 60, 100);
-    for (unsigned i = 0; i < 100; ++i) {
-        synth1->renderBlock(buffer);
-        synth2->renderBlock(buffer);
-        WAIT(10);
-    }
-
-    synth2->noteOn(0, 60, 100);
-    for (unsigned i = 0; i < 100; ++i) {
-        synth1->renderBlock(buffer);
-        synth2->renderBlock(buffer);
-        WAIT(10);
-    }
-
-    synth1->noteOff(0, 60, 100);
-    for (unsigned i = 0; i < 100; ++i) {
-        synth1->renderBlock(buffer);
-        synth2->renderBlock(buffer);
-        WAIT(10);
-    }
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 1);
 
     synth1->loadSfzFile("");
-    synth1->allSoundOff();
     for (unsigned i = 0; i < 100; ++i) {
         synth1->renderBlock(buffer);
         synth2->renderBlock(buffer);
-        WAIT(10);
+        synth3->renderBlock(buffer);
+        wait_ms(10);
     }
 
     CHECK(synth1->getNumPreloadedSamples() == 0);
     CHECK(synth2->getNumPreloadedSamples() == 1);
     CHECK(synth3->getNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth2->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 1);
 
     synth2.reset();
+    wait_ms(1100);
 
     CHECK(synth1->getNumPreloadedSamples() == 0);
     CHECK(synth3->getNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth3->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 0);
-    CHECK(synth3->getResources().getFilePool().getGlobalNumPreloadedSamples() == 0);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 0);
 
     synth2.reset(new sfz::Synth());
-
     synth2->setSamplesPerBlock(256);
 
     synth1->loadSfzFile(fs::current_path() / "tests/TestFiles/looped_regions.sfz");
     synth2->loadSfzFile(fs::current_path() / "tests/TestFiles/kick_embedded.sfz");
 
+    for (unsigned i = 0; i < 100; ++i) {
+        synth1->renderBlock(buffer);
+        synth2->renderBlock(buffer);
+        synth3->renderBlock(buffer);
+        wait_ms(10);
+    }
     CHECK(synth1->getNumPreloadedSamples() == 1);
     CHECK(synth2->getNumPreloadedSamples() == 1);
     CHECK(synth3->getNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth2->getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-    CHECK(synth3->getResources().getFilePool().getActualNumPreloadedSamples() == 0);
-    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 2);
-    CHECK(synth2->getResources().getFilePool().getGlobalNumPreloadedSamples() == 2);
-    CHECK(synth3->getResources().getFilePool().getGlobalNumPreloadedSamples() == 2);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 2);
+
+    synth3->loadSfzFile(fs::current_path() / "tests/TestFiles/wavetables.sfz");
+
+    for (unsigned i = 0; i < 100; ++i) {
+        synth1->renderBlock(buffer);
+        synth2->renderBlock(buffer);
+        synth3->renderBlock(buffer);
+        wait_ms(10);
+    }
+    CHECK(synth1->getNumPreloadedSamples() == 1);
+    CHECK(synth2->getNumPreloadedSamples() == 1);
+    CHECK(synth3->getNumPreloadedSamples() == 4);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 6);
+
+    synth1->loadSfzFile(fs::current_path() / "tests/TestFiles/wavetables.sfz");
+    for (unsigned i = 0; i < 100; ++i) {
+        synth1->renderBlock(buffer);
+        synth2->renderBlock(buffer);
+        synth3->renderBlock(buffer);
+        wait_ms(10);
+    }
+    wait_ms(1100);
+
+    CHECK(synth1->getNumPreloadedSamples() == 4);
+    CHECK(synth2->getNumPreloadedSamples() == 1);
+    CHECK(synth3->getNumPreloadedSamples() == 4);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 5);
 
     // Release
+    synth3.reset();
+    wait_ms(1100);
+    CHECK(synth1->getNumPreloadedSamples() == 4);
+    CHECK(synth2->getNumPreloadedSamples() == 1);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 5);
+
     synth1.reset();
     synth2.reset();
-    synth3.reset();
+    wait_ms(1100);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 0);
 
-    const unsigned synthCount = 100;
-    
+    filePoolGlobalObj.reset();
+    filePoolGlobalObj = sfz::FilePool::getGlobalObject();
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 0);
+}
+
+static const int synthCount = 100;
+
+TEST_CASE("[FilePool] Stress Test")
+{
     struct TestSynthThread {
+        enum Status {
+            Initialized,
+            Waiting1,
+            Loading,
+            Waiting2,
+            Rendering,
+            Posted,
+        };
+
         TestSynthThread()
         {
+            CHECK((bool)semBarrier);
             synth.setSamplesPerBlock(256);
+            thread.reset(new std::thread( &TestSynthThread::job, this ));
         }
 
         ~TestSynthThread()
         {
-            running = false;
+            running.store(false, std::memory_order_release);
+            flag.store(false, std::memory_order_release);
+            status.store(Status::Posted, std::memory_order_release);
             std::error_code ec;
             semBarrier.post(ec);
-            ASSERT(!ec);
-            thread.join();
+            CHECK(!ec);
+            thread->join();
         }
 
-        void job() noexcept
+        void job()
         {
+            status.store(Status::Waiting1, std::memory_order_release);
             semBarrier.wait();
+            CHECK(status.load(std::memory_order_acquire) == Status::Posted);
+            CHECK(flag.load(std::memory_order_acquire) == false);
+            flag.store(true, std::memory_order_release);
+            status.store(Status::Loading, std::memory_order_release);
             synth.loadSfzFile(fs::current_path() / "tests/TestFiles/looped_regions.sfz");
-            execution();
-            if (running) {
-                while (semBarrier.wait(), running) {
+            if (running.load(std::memory_order_acquire)) {
+                status.store(Status::Waiting2, std::memory_order_release);
+                while (semBarrier.wait(), running.load(std::memory_order_acquire)) {
+                    CHECK(status.load(std::memory_order_acquire) == Status::Posted);
+                    CHECK(!flag.load(std::memory_order_acquire));
+                    flag.store(true, std::memory_order_release);
+                    status.store(Status::Rendering, std::memory_order_release);
                     synth.renderBlock(buffer);
-                    execution();
+                    status.store(Status::Waiting2, std::memory_order_release);
                 }
             }
         }
@@ -203,101 +249,82 @@ TEST_CASE("[FilePool] Shared samples")
         }
 
         sfz::AudioBuffer<float> buffer { 2, 256 };
-        sfz::Synth synth;
-        std::thread thread { &TestSynthThread::job, this };
+        sfz::Synth synth {};
+        std::unique_ptr<std::thread> thread {};
         RTSemaphore semBarrier { 0 };
-        bool running { true };
-        std::function<void()> execution;
+        std::atomic<bool> running { true };
+        std::atomic<Status> status { Status::Initialized };
+        std::atomic<bool> flag { true };
     };
 
-    std::unique_ptr<TestSynthThread[]> synthThreads { new TestSynthThread[synthCount]() };
+    std::unique_ptr<TestSynthThread> synthThreads[synthCount];
+    for (int i = 0; i < synthCount; ++i) {
+        synthThreads[i].reset(new TestSynthThread());
+    }
+    wait_ms(100);
+    std::shared_ptr<sfz::FilePool::GlobalObject> filePoolGlobalObj { sfz::FilePool::getGlobalObject() };
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 0);
 
-    std::atomic<int> finishCount { 0 };
-    auto countFunc = [&finishCount]() {
-        ++finishCount;
+    auto waitForStatus = [&](int max_counter, TestSynthThread::Status statusToWait) {
+        for (int j = 0; j < max_counter; ++j) {
+            int flagCount = 0;
+            for (int i = 0; i < synthCount; ++i) {
+                if (synthThreads[i]->status.load(std::memory_order_acquire) == statusToWait) {
+                    flagCount++;
+                }
+                else {
+                    wait_ms(10);
+                }
+            }
+            if (flagCount == synthCount) {
+                wait_ms(10);
+                for (int i = 0; i < synthCount; ++i) {
+                    ASSERT(synthThreads[i]->status.load(std::memory_order_acquire) == statusToWait);
+                }
+                return true;
+            }
+        }
+        return false;
     };
-    for (unsigned i = 0; i < synthCount; ++i) {
-        synthThreads[i].execution = countFunc;
-    }
 
-    finishCount = 0;
-    for (unsigned j = 0; j < synthCount; ++j) {
-        synthThreads[j].trigger();
-    }
-    int count = 0;
-    while (finishCount != synthCount) {
-        CHECK(++count < 65536);
-        WAIT(100);
-    }
+    auto triggerFunc = [&]() {
+        for (int i = 0; i < synthCount; ++i) {
+            synthThreads[i]->flag.store(false, std::memory_order_release);
+        }
+        for (int i = 0; i < synthCount; ++i) {
+            ASSERT(synthThreads[i]->flag.load(std::memory_order_acquire) == false);
+            synthThreads[i]->status.store(TestSynthThread::Status::Posted, std::memory_order_release);
+            synthThreads[i]->trigger();
+        }
+    };
 
+    CHECK(waitForStatus(200000, TestSynthThread::Status::Waiting1));
+    triggerFunc();
+    CHECK(waitForStatus(1000, TestSynthThread::Status::Waiting2));
+
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 1);
     for (unsigned i = 0; i < synthCount; ++i) {
-        CHECK(synthThreads[i].synth.getNumPreloadedSamples() == 1);
-        CHECK(synthThreads[i].synth.getResources().getFilePool().getActualNumPreloadedSamples() == 1);
-        CHECK(synthThreads[i].synth.getResources().getFilePool().getGlobalNumPreloadedSamples() == 1);
+        CHECK(synthThreads[i]->synth.getNumPreloadedSamples() == 1);
     }
     
     for (unsigned i = 0; i < synthCount; ++i) {
-        synthThreads[i].noteOn();
+        synthThreads[i]->noteOn();
     }
     for (unsigned i = 0; i < 100; ++i) {
-        finishCount = 0;
-        for (unsigned j = 0; j < synthCount; ++j) {
-            synthThreads[j].trigger();
-        }
-        while (finishCount != synthCount) {
-            WAIT(10);
-        }
+        triggerFunc();
+        CHECK(waitForStatus(10, TestSynthThread::Status::Waiting2));
     }
 
     for (unsigned i = 0; i < synthCount; ++i) {
-        synthThreads[i].noteOff();
+        synthThreads[i]->noteOff();
     }
     for (unsigned i = 0; i < 100; ++i) {
-        finishCount = 0;
-        for (unsigned j = 0; j < synthCount; ++j) {
-            synthThreads[j].trigger();
-        }
-        while (finishCount != synthCount) {
-            WAIT(10);
-        }
+        triggerFunc();
+        CHECK(waitForStatus(10, TestSynthThread::Status::Waiting2));
     }
-
-    synth1.reset(new sfz::Synth());
-    synthThreads.reset();
-
-    CHECK(synth1->getResources().getFilePool().getGlobalNumPreloadedSamples() == 0);
-
-    struct TestThread {
-        TestThread(std::function<void()> execution) : execution(execution) {}
-        void job() noexcept
-        {
-            execution();
-            done = true;
-        }
-        ~TestThread()
-        {
-            if (done) {
-                thread.join();
-            }
-        }
-
-        bool done { false };
-        std::thread thread { &TestThread::job, this };
-        std::function<void()> execution;
-    };
-    {
-        sfz::FileData fileData1;
-        sfz::FileData fileData2;
-        bool done = false;
-        TestThread thread {
-            [&fileData1, &done](){
-                fileData1.waitForInitialize();
-                done = true;
-            }
-        };
-        WAIT(300);
-        fileData1.initWith(sfz::FileData::Status::Invalid, std::move(fileData2));
-        WAIT(1000);
-        CHECK(done);
+    for (unsigned i = 0; i < synthCount; ++i) {
+        synthThreads[i].reset();
     }
+    wait_ms(1100);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 0);
 }

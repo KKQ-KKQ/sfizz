@@ -18,6 +18,10 @@
 
 namespace sfz {
 
+#if defined(SFIZZ_USE_SNDFILE)
+static bool formatHasFastSeeking(int format);
+#endif
+
 class BasicSndfileReader : public AudioReader {
 public:
     explicit BasicSndfileReader(ST_AudioFile handle, std::unique_ptr<MetadataReader> mdReader)
@@ -28,6 +32,8 @@ public:
     int64_t frames() const override;
     unsigned channels() const override;
     unsigned sampleRate() const override;
+    virtual bool seekable() const override;
+    virtual bool seek(uint64_t position) override;
     bool getInstrumentInfo(InstrumentInfo& instrument) override;
     bool getWavetableInfo(WavetableInfo& instrument) override;
 protected:
@@ -53,6 +59,20 @@ unsigned BasicSndfileReader::channels() const
 unsigned BasicSndfileReader::sampleRate() const
 {
     return handle_.get_sample_rate();
+}
+
+bool BasicSndfileReader::seekable() const
+{
+#if defined(SFIZZ_USE_SNDFILE)
+    return formatHasFastSeeking(handle_.get_sndfile_format());
+#else
+    return true;
+#endif
+}
+
+bool BasicSndfileReader::seek(uint64_t position)
+{
+    return handle_.seek(position);
 }
 
 bool BasicSndfileReader::getWavetableInfo(WavetableInfo& wt)
@@ -168,6 +188,7 @@ public:
     explicit ReverseReader(ST_AudioFile handle, std::unique_ptr<MetadataReader> mdReader);
     AudioReaderType type() const override;
     size_t readNextBlock(float* buffer, size_t frames) override;
+    bool seek(uint64_t position) override;
 
 private:
     uint64_t position_ {};
@@ -203,6 +224,16 @@ size_t ReverseReader::readNextBlock(float* buffer, size_t frames)
     return readFrames;
 }
 
+bool ReverseReader::seek(uint64_t position)
+{
+    uint64_t frames = handle_.get_frame_count();
+    if (position <= frames) {
+        position_ = frames - position;
+        return true;
+    }
+    return false;
+}
+
 //------------------------------------------------------------------------------
 
 /**
@@ -213,6 +244,8 @@ public:
     explicit NoSeekReverseReader(ST_AudioFile handle, std::unique_ptr<MetadataReader> mdReader);
     AudioReaderType type() const override;
     size_t readNextBlock(float* buffer, size_t frames) override;
+    bool seekable() const override { return false; }
+    bool seek(uint64_t) override { return false; }
 
 private:
     void readWholeFile();
@@ -319,6 +352,8 @@ public:
     unsigned channels() const override { return 1; }
     unsigned sampleRate() const override { return 44100; }
     size_t readNextBlock(float*, size_t) override { return 0; }
+    bool seekable() const override { return false; }
+    bool seek(uint64_t) override { return false; }
     bool getInstrumentInfo(InstrumentInfo& ) override { return false; }
 private:
     AudioReaderType type_ {};
