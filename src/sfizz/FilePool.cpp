@@ -29,6 +29,7 @@
 #include "AudioBuffer.h"
 #include "AudioSpan.h"
 #include "Config.h"
+#include "SynthConfig.h"
 #include "utility/SwapAndPop.h"
 #include "utility/Debug.h"
 #include <ThreadPool.h>
@@ -63,8 +64,12 @@ static std::shared_ptr<ThreadPool> globalThreadPool()
     if (threadPool)
         return threadPool;
 
+#if 1
+    constexpr unsigned numThreads = 1;
+#else
     unsigned numThreads = std::thread::hardware_concurrency();
     numThreads = (numThreads > 2) ? (numThreads - 2) : 1;
+#endif
     threadPool.reset(new ThreadPool(numThreads));
     globalThreadPoolWeakPtr = threadPool;
     return threadPool;
@@ -98,24 +103,37 @@ sfz::FileAudioBuffer readFromFile(sfz::AudioReader& reader, uint32_t numFrames)
     return baseBuffer;
 }
 
-void streamFromFile(sfz::AudioReader& reader, sfz::FileAudioBuffer& output, std::atomic<size_t>* filledFrames = nullptr)
+/*
+ * this function returns false when the loading is not completed.
+ */
+bool streamFromFile(sfz::AudioReader& reader, sfz::FileAudioBuffer& output, std::atomic<size_t>& filledFrames, bool freeWheeling)
 {
     const auto numFrames = static_cast<size_t>(reader.frames());
     const auto numChannels = reader.channels();
     const auto chunkSize = static_cast<size_t>(sfz::config::fileChunkSize);
 
-    output.reset();
-    output.addChannels(reader.channels());
-    output.resize(numFrames);
-    output.clear();
+    if (filledFrames == 0) {
+        output.reset();
+        output.addChannels(reader.channels());
+        output.resize(numFrames);
+        output.clear();
+    }
 
     sfz::Buffer<float> fileBlock { chunkSize * numChannels };
-    size_t inputFrameCounter { 0 };
-    size_t outputFrameCounter { 0 };
+    size_t inputFrameCounter { filledFrames };
+    size_t outputFrameCounter { inputFrameCounter };
     bool inputEof = false;
+    bool seekable = reader.seekable();
+    if (seekable)
+        reader.seek(inputFrameCounter);
+
+    int chunkCounter = (freeWheeling || !seekable) ? INT_MAX : static_cast<int>(sfz::config::numChunkForLoadingAtOnce);
 
     while (!inputEof && inputFrameCounter < numFrames)
     {
+        if (chunkCounter-- == 0)
+            return false;
+
         auto thisChunkSize = std::min(chunkSize, numFrames - inputFrameCounter);
         const auto numFramesRead = static_cast<size_t>(
             reader.readNextBlock(fileBlock.data(), thisChunkSize));
@@ -136,14 +154,15 @@ void streamFromFile(sfz::AudioReader& reader, sfz::FileAudioBuffer& output, std:
         inputFrameCounter += thisChunkSize;
         outputFrameCounter += outputChunkSize;
 
-        if (filledFrames != nullptr)
-            filledFrames->fetch_add(outputChunkSize);
+        filledFrames.fetch_add(outputChunkSize);
     }
+    return true;
 }
 
-sfz::FilePool::FilePool()
+sfz::FilePool::FilePool(const SynthConfig& synthConfig)
     : filesToLoad(alignedNew<FileQueue>()),
-      threadPool(globalThreadPool())
+      threadPool(globalThreadPool()),
+      synthConfig(synthConfig)
 {
     loadingJobs.reserve(config::maxVoices);
     lastUsedFiles.reserve(config::maxVoices);
@@ -442,19 +461,23 @@ sfz::FileDataHolder sfz::FilePool::getFilePromise(const std::shared_ptr<FileId>&
     }
 
     auto& fileData = preloaded->second;
-    if (!fileData.fullyLoaded) {
+    auto status = fileData.status.load();
+    if (status == FileData::Status::Preloaded && !fileData.fullyLoaded) {
         QueuedFileData queuedData { fileId, &fileData };
         if (!filesToLoad->try_push(queuedData)) {
             DBG("[sfizz] Could not enqueue the file to load for " << fileId << " (queue capacity " << filesToLoad->capacity() << ")");
             return {};
         }
+        // status should not change when it is changed at this moment
+        fileData.status.compare_exchange_strong(status, FileData::Status::PendingStreaming);
 
+        // this is needed even when status is not PendingStreaming
         std::error_code ec;
         dispatchBarrier.post(ec);
         ASSERT(!ec);
     }
 
-    return { &preloaded->second };
+    return { &fileData };
 }
 
 void sfz::FilePool::setPreloadSize(uint32_t preloadSize) noexcept
@@ -521,8 +544,8 @@ void sfz::FilePool::loadingJob(const QueuedFileData& data) noexcept
             atomic_queue::spin_loop_pause();
             continue;
         }
-        // Already loading or loaded
-        if (currentStatus != FileData::Status::Preloaded)
+        // Already loading, loaded, or released
+        if (currentStatus != FileData::Status::PendingStreaming)
             return;
 
         // go outside loop if this gets token
@@ -530,9 +553,19 @@ void sfz::FilePool::loadingJob(const QueuedFileData& data) noexcept
             break;
     }
 
-    streamFromFile(*reader, data.data->fileData, &data.data->availableFrames);
+    bool completed = streamFromFile(*reader, data.data->fileData, data.data->availableFrames, synthConfig.freeWheeling);
 
-    data.data->status = FileData::Status::Done;
+    if (completed) {
+        data.data->status = FileData::Status::Done;
+    }
+    else {
+        data.data->status = FileData::Status::PendingStreaming;
+        if (filesToLoad->try_push(data)) {
+            std::error_code ec;
+            dispatchBarrier.post(ec);
+            ASSERT(!ec);
+        }
+    }
 
     std::lock_guard<SpinMutex> guard { garbageAndLastUsedMutex };
     if (absl::c_find(lastUsedFiles, *id) == lastUsedFiles.end())
@@ -567,7 +600,7 @@ void sfz::FilePool::dispatchingJob() noexcept
 
         QueuedFileData queuedData;
         if (filesToLoad->try_pop(queuedData)) {
-            if (queuedData.id.expired()) {
+            if (queuedData.id.expired() || queuedData.data->status != FileData::Status::PendingStreaming) {
                 // file ID was nulled, it means the region was deleted, ignore
             }
             else
@@ -688,7 +721,7 @@ void sfz::FilePool::triggerGarbageCollection() noexcept
                 return true;
             }
         }
-        else if (status != FileData::Status::Done) {
+        else if (status != FileData::Status::Done && status != FileData::Status::PendingStreaming) {
             return false;
         }
 

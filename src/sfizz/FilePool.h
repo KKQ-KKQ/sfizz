@@ -48,6 +48,8 @@
 class ThreadPool;
 
 namespace sfz {
+struct SynthConfig;
+
 using FileAudioBuffer = AudioBuffer<float, 2, config::defaultAlignment,
                                     sfz::config::excessFileFrames, sfz::config::excessFileFrames>;
 using FileAudioBufferPtr = std::shared_ptr<FileAudioBuffer>;
@@ -67,7 +69,7 @@ struct FileInformation {
 // Strict C++11 disallows member initialization if aggregate initialization is to be used...
 struct FileData
 {
-    enum class Status { Invalid, Preloaded, Streaming, Done, GarbageCollecting };
+    enum class Status { Invalid, Preloaded, PendingStreaming, Streaming, Done, GarbageCollecting };
     FileData() = default;
     FileData(FileAudioBuffer preloaded, FileInformation info)
     : preloadedData(std::move(preloaded)), information(std::move(info))
@@ -196,7 +198,7 @@ public:
      * This creates the background threads based on config::numBackgroundThreads
      * as well as the garbage collection thread.
      */
-    FilePool();
+    FilePool(const SynthConfig& synthConfig);
 
     ~FilePool();
     /**
@@ -382,6 +384,8 @@ private:
     // Preloaded data
     absl::flat_hash_map<FileId, FileData> preloadedFiles;
     absl::flat_hash_map<FileId, FileData> loadedFiles;
+
+    const SynthConfig& synthConfig;
     LEAK_DETECTOR(FilePool);
 };
 }

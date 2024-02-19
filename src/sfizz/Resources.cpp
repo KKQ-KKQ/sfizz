@@ -19,6 +19,7 @@
 namespace sfz {
 
 struct Resources::Impl {
+    Impl() : filePool(synthConfig) {}
     SynthConfig synthConfig;
     BufferPool bufferPool;
     MidiState midiState;
