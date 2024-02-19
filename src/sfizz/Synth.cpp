@@ -753,8 +753,9 @@ void Synth::Impl::finalizeSfzLoad()
                 auto sample = filePool.loadFile(*region.sampleId);
                 bool allZeros = true;
                 int numChannels = sample->information.numChannels;
+                auto& preloadedData = sample->getPreloadedData();
                 for (int i = 0; i < numChannels; ++i) {
-                    allZeros &= allWithin(sample->preloadedData.getConstSpan(i),
+                    allZeros &= allWithin(preloadedData.getConstSpan(i),
                         -config::virtuallyZero, config::virtuallyZero);
                 }
 
@@ -1116,15 +1117,6 @@ void Synth::renderBlock(AudioSpan<float> buffer) noexcept
 
     if (synthConfig.freeWheeling)
         filePool.waitForBackgroundLoading();
-
-    const auto now = highResNow();
-    const auto timeSinceLastCollection =
-        std::chrono::duration_cast<std::chrono::seconds>(now - impl.lastGarbageCollection_);
-
-    if (timeSinceLastCollection.count() > config::fileClearingPeriod) {
-        impl.lastGarbageCollection_ = now;
-        filePool.triggerGarbageCollection();
-    }
 
     auto tempSpan = bufferPool.getStereoBuffer(numFrames);
     auto tempMixSpan = bufferPool.getStereoBuffer(numFrames);

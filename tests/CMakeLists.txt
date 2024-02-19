@@ -59,6 +59,7 @@ set(SFIZZ_TEST_SOURCES
     OversamplerT.cpp
     MemoryT.cpp
     AudioFilesT.cpp
+    FilePoolT.cpp
     DataHelpers.h
     DataHelpers.cpp
 )
@@ -72,3 +73,4 @@ endif()
 sfizz_enable_lto_if_needed(sfizz_tests)
 sfizz_enable_fast_math(sfizz_tests)
 catch_discover_tests(sfizz_tests)
+
