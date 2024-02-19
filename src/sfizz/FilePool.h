@@ -141,7 +141,7 @@ public:
         other.data = nullptr;
         return *this;
     }
-    FileDataHolder(FileData* data) : data(data)
+    FileDataHolder(const std::shared_ptr<FileData> &data) : data(data)
     {
         if (!data)
             return;
@@ -163,10 +163,10 @@ public:
         reset();
     }
     FileData& operator*() { return *data; }
-    FileData* operator->() { return data; }
-    explicit operator bool() const { return data != nullptr; }
+    FileData* operator->() { return data.get(); }
+    explicit operator bool() const { return bool(data); }
 private:
-    FileData* data { nullptr };
+    std::shared_ptr<FileData> data { nullptr };
     LEAK_DETECTOR(FileDataHolder);
 };
 
@@ -358,10 +358,10 @@ private:
     struct QueuedFileData
     {
         QueuedFileData() noexcept {}
-        QueuedFileData(std::weak_ptr<FileId> id, FileData* data) noexcept
+        QueuedFileData(std::weak_ptr<FileId> id, const std::shared_ptr<FileData>& data) noexcept
         : id(id), data(data) {}
         std::weak_ptr<FileId> id;
-        FileData* data { nullptr };
+        std::shared_ptr<FileData> data { nullptr };
     };
 
     using FileQueue = atomic_queue::AtomicQueue2<QueuedFileData, config::maxVoices>;
@@ -382,8 +382,8 @@ private:
     std::shared_ptr<ThreadPool> threadPool;
 
     // Preloaded data
-    absl::flat_hash_map<FileId, FileData> preloadedFiles;
-    absl::flat_hash_map<FileId, FileData> loadedFiles;
+    absl::flat_hash_map<FileId, std::shared_ptr<FileData>> preloadedFiles;
+    absl::flat_hash_map<FileId, std::shared_ptr<FileData>> loadedFiles;
 
     const SynthConfig& synthConfig;
     LEAK_DETECTOR(FilePool);

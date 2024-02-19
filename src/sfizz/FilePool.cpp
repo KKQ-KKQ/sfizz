@@ -302,11 +302,11 @@ absl::optional<sfz::FileInformation> sfz::FilePool::checkExistingFileInformation
 {
     const auto loadedFile = loadedFiles.find(fileId);
     if (loadedFile != loadedFiles.end())
-        return loadedFile->second.information;
+        return loadedFile->second->information;
 
     const auto preloadedFile = preloadedFiles.find(fileId);
     if (preloadedFile != preloadedFiles.end())
-        return preloadedFile->second.information;
+        return preloadedFile->second->information;
 
     return {};
 }
@@ -330,7 +330,7 @@ bool sfz::FilePool::preloadFile(const FileId& fileId, uint32_t maxOffset) noexce
 {
     const auto loadedFile = loadedFiles.find(fileId);
     if (loadedFile != loadedFiles.end()) {
-        loadedFile->second.preloadCallCount++;
+        loadedFile->second->preloadCallCount++;
         return true;
     }
 
@@ -353,22 +353,22 @@ bool sfz::FilePool::preloadFile(const FileId& fileId, uint32_t maxOffset) noexce
     const auto existingFile = preloadedFiles.find(fileId);
     if (existingFile != preloadedFiles.end()) {
         auto& fileData = existingFile->second;
-        if (framesToLoad > fileData.preloadedData.getNumFrames()) {
-            fileData.information.maxOffset = maxOffset;
-            fileData.preloadedData = readFromFile(*reader, framesToLoad);
-            fileData.fullyLoaded = frames == framesToLoad;
+        if (framesToLoad > fileData->preloadedData.getNumFrames()) {
+            fileData->information.maxOffset = maxOffset;
+            fileData->preloadedData = readFromFile(*reader, framesToLoad);
+            fileData->fullyLoaded = frames == framesToLoad;
         }
-        fileData.preloadCallCount++;
+        fileData->preloadCallCount++;
     } else {
         fileInformation->sampleRate = static_cast<double>(reader->sampleRate());
-        auto insertedPair = preloadedFiles.insert_or_assign(fileId, {
+        FileData *fileData = new FileData(
             readFromFile(*reader, framesToLoad),
             *fileInformation
-        });
-
-        insertedPair.first->second.preloadCallCount++;
-        insertedPair.first->second.status = FileData::Status::Preloaded;
-        insertedPair.first->second.fullyLoaded = framesToLoad == frames;
+        );
+        fileData->status = FileData::Status::Preloaded;
+        fileData->fullyLoaded = framesToLoad == frames;
+        fileData->preloadCallCount++;
+        preloadedFiles.insert_or_assign(fileId, std::shared_ptr<FileData>(fileData));
     }
 
     return true;
@@ -377,17 +377,17 @@ bool sfz::FilePool::preloadFile(const FileId& fileId, uint32_t maxOffset) noexce
 void sfz::FilePool::resetPreloadCallCounts() noexcept
 {
     for (auto& preloadedFile: preloadedFiles)
-        preloadedFile.second.preloadCallCount = 0;
+        preloadedFile.second->preloadCallCount = 0;
 
     for (auto& loadedFile: loadedFiles)
-        loadedFile.second.preloadCallCount = 0;
+        loadedFile.second->preloadCallCount = 0;
 }
 
 void sfz::FilePool::removeUnusedPreloadedData() noexcept
 {
     for (auto it = preloadedFiles.begin(), end = preloadedFiles.end(); it != end; ) {
         auto copyIt = it++;
-        if (copyIt->second.preloadCallCount == 0) {
+        if (copyIt->second->preloadCallCount == 0) {
             DBG("[sfizz] Removing unused preloaded data: " << copyIt->first.filename());
             preloadedFiles.erase(copyIt);
         }
@@ -395,7 +395,7 @@ void sfz::FilePool::removeUnusedPreloadedData() noexcept
 
     for (auto it = loadedFiles.begin(), end = loadedFiles.end(); it != end; ) {
         auto copyIt = it++;
-        if (copyIt->second.preloadCallCount == 0) {
+        if (copyIt->second->preloadCallCount == 0) {
             DBG("[sfizz] Removing unused loaded data: " << copyIt->first.filename());
             loadedFiles.erase(copyIt);
         }
@@ -410,49 +410,53 @@ sfz::FileDataHolder sfz::FilePool::loadFile(const FileId& fileId) noexcept
 
     const auto existingFile = loadedFiles.find(fileId);
     if (existingFile != loadedFiles.end()) {
-        existingFile->second.preloadCallCount++;
-        return { &existingFile->second };
+        existingFile->second->preloadCallCount++;
+        return { existingFile->second };
     }
 
     const fs::path file { rootDirectory / fileId.filename() };
     AudioReaderPtr reader = createAudioReader(file, fileId.isReverse());
 
     const auto frames = static_cast<uint32_t>(reader->frames());
-    auto insertedPair = loadedFiles.insert_or_assign(fileId, {
+    std::shared_ptr<FileData> fileData { new FileData(
         readFromFile(*reader, frames),
         *fileInformation
-    });
-    insertedPair.first->second.preloadCallCount++;
-    insertedPair.first->second.status = FileData::Status::Preloaded;
-    insertedPair.first->second.fullyLoaded = true;
-    return { &insertedPair.first->second };
+    )};
+    // Initially set status
+    fileData->status = FileData::Status::Preloaded;
+    fileData->fullyLoaded = true;
+    fileData->preloadCallCount++;
+    loadedFiles.insert_or_assign(fileId, fileData);
+    return { fileData };
 }
 
 sfz::FileDataHolder sfz::FilePool::loadFromRam(const FileId& fileId, const std::vector<char>& data) noexcept
 {
     const auto loaded = loadedFiles.find(fileId);
     if (loaded != loadedFiles.end())
-        return { &loaded->second };
+        return { loaded->second };
 
     auto reader = createAudioReaderFromMemory(data.data(), data.size(), fileId.isReverse());
     auto fileInformation = getReaderInformation(reader.get());
     const auto frames = static_cast<uint32_t>(reader->frames());
-    auto insertedPair = loadedFiles.insert_or_assign(fileId, {
+    std::shared_ptr<FileData> fileData { new FileData(
         readFromFile(*reader, frames),
         *fileInformation
-    });
-    insertedPair.first->second.preloadCallCount++;
-    insertedPair.first->second.status = FileData::Status::Preloaded;
-    insertedPair.first->second.fullyLoaded = true;
+    )};
+    // Initially set status
+    fileData->status = FileData::Status::Preloaded;
+    fileData->fullyLoaded = true;
+    fileData->preloadCallCount++;
+    loadedFiles.insert_or_assign(fileId, fileData);
     DBG("Added a file " << fileId.filename());
-    return { &insertedPair.first->second };
+    return { fileData };
 }
 
 sfz::FileDataHolder sfz::FilePool::getFilePromise(const std::shared_ptr<FileId>& fileId) noexcept
 {
     const auto loaded = loadedFiles.find(*fileId);
     if (loaded != loadedFiles.end())
-        return { &loaded->second };
+        return { loaded->second };
 
     const auto preloaded = preloadedFiles.find(*fileId);
     if (preloaded == preloadedFiles.end()) {
@@ -461,15 +465,15 @@ sfz::FileDataHolder sfz::FilePool::getFilePromise(const std::shared_ptr<FileId>&
     }
 
     auto& fileData = preloaded->second;
-    auto status = fileData.status.load();
-    if (status == FileData::Status::Preloaded && !fileData.fullyLoaded) {
-        QueuedFileData queuedData { fileId, &fileData };
+    auto status = fileData->status.load();
+    if (status == FileData::Status::Preloaded && !fileData->fullyLoaded) {
+        QueuedFileData queuedData { fileId, fileData };
         if (!filesToLoad->try_push(queuedData)) {
             DBG("[sfizz] Could not enqueue the file to load for " << fileId << " (queue capacity " << filesToLoad->capacity() << ")");
             return {};
         }
         // status should not change when it is changed at this moment
-        fileData.status.compare_exchange_strong(status, FileData::Status::PendingStreaming);
+        fileData->status.compare_exchange_strong(status, FileData::Status::PendingStreaming);
 
         // this is needed even when status is not PendingStreaming
         std::error_code ec;
@@ -477,7 +481,7 @@ sfz::FileDataHolder sfz::FilePool::getFilePromise(const std::shared_ptr<FileId>&
         ASSERT(!ec);
     }
 
-    return { &fileData };
+    return { fileData };
 }
 
 void sfz::FilePool::setPreloadSize(uint32_t preloadSize) noexcept
@@ -490,13 +494,13 @@ void sfz::FilePool::setPreloadSize(uint32_t preloadSize) noexcept
     for (auto& preloadedFile : preloadedFiles) {
         auto& fileId = preloadedFile.first;
         auto& fileData = preloadedFile.second;
-        const auto maxOffset = fileData.information.maxOffset;
+        const auto maxOffset = fileData->information.maxOffset;
         fs::path file { rootDirectory / fileId.filename() };
         AudioReaderPtr reader = createAudioReader(file, fileId.isReverse());
         const auto frames = reader->frames();
         const auto framesToLoad = min(frames, maxOffset + preloadSize);
-        fileData.preloadedData = readFromFile(*reader, static_cast<uint32_t>(framesToLoad));
-        fileData.fullyLoaded = frames == framesToLoad;
+        fileData->preloadedData = readFromFile(*reader, static_cast<uint32_t>(framesToLoad));
+        fileData->fullyLoaded = frames == framesToLoad;
     }
 }
 
@@ -676,11 +680,11 @@ void sfz::FilePool::setRamLoading(bool loadInRam) noexcept
             fs::path file { rootDirectory / preloadedFile.first.filename() };
             AudioReaderPtr reader = createAudioReader(file, preloadedFile.first.isReverse());
             auto& fileData = preloadedFile.second;
-            fileData.preloadedData = readFromFile(
+            fileData->preloadedData = readFromFile(
                 *reader,
-                fileData.information.end
+                fileData->information.end
             );
-            fileData.fullyLoaded = true;
+            fileData->fullyLoaded = true;
         }
     } else {
         setPreloadSize(preloadSize);
@@ -705,19 +709,19 @@ void sfz::FilePool::triggerGarbageCollection() noexcept
             return true;
         }
 
-        sfz::FileData& data = it->second;
+        std::shared_ptr<FileData> data = it->second;
 
-        if (data.readerCount != 0)
+        if (data->readerCount != 0)
             return false;
 
-        const auto secondsIdle = std::chrono::duration_cast<std::chrono::seconds>(now - data.lastViewerLeftAt).count();
+        const auto secondsIdle = std::chrono::duration_cast<std::chrono::seconds>(now - data->lastViewerLeftAt).count();
         if (secondsIdle < config::fileClearingPeriod)
             return false;
 
-        auto status = data.status.load();
+        auto status = data->status.load();
         if (status == FileData::Status::Preloaded) {
             // do the garbage collection when availableFrames != 0
-            if (data.availableFrames == 0) {
+            if (data->availableFrames == 0) {
                 return true;
             }
         }
@@ -726,16 +730,16 @@ void sfz::FilePool::triggerGarbageCollection() noexcept
         }
 
         // do garbage collection when changing the status is success
-        if (data.status.compare_exchange_strong(status, FileData::Status::GarbageCollecting)) {
+        if (data->status.compare_exchange_strong(status, FileData::Status::GarbageCollecting)) {
             // recheck readerCount
-            auto readerCount = data.readerCount.load();
+            auto readerCount = data->readerCount.load();
             if (readerCount == 0) {
-                data.availableFrames = 0;
-                garbageToCollect.push_back(std::move(data.fileData));
-                data.status = FileData::Status::Preloaded;
+                data->availableFrames = 0;
+                garbageToCollect.push_back(std::move(data->fileData));
+                data->status = FileData::Status::Preloaded;
                 return true;
             }
-            data.status = status;
+            data->status = status;
         }
         return false;
     });
