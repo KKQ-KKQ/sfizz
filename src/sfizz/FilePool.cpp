@@ -139,7 +139,7 @@ bool sfz::FileData::addSecondaryOwner(const FilePool* owner, uint32_t preloadSiz
         bool found = false;
         uint32_t maxPreloadSize = 1;
         uint32_t oldPreloadSize = 0;
-        for (auto itPair : ownerPreloadSizeMap) {
+        for (auto &itPair : ownerPreloadSizeMap) {
             if (itPair.first == owner) {
                 found = true;
                 oldPreloadSize = itPair.second;
@@ -168,7 +168,7 @@ bool sfz::FileData::replaceAndGetOldMaxPreloadSize(const sfz::FilePool* owner, u
     std::lock_guard<std::mutex> guard2 { ownerMutex };
     uint32_t maxPreloadSize = 1;
     uint32_t oldPreloadSize = 0;
-    for (auto itPair : ownerPreloadSizeMap) {
+    for (auto &itPair : ownerPreloadSizeMap) {
         if (itPair.first == owner) {
             oldPreloadSize = itPair.second;
             itPair.second = preloadSize;
