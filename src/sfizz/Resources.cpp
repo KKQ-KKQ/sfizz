@@ -60,11 +60,10 @@ void Resources::setSamplesPerBlock(int samplesPerBlock)
     impl.beatClock.setSamplesPerBlock(samplesPerBlock);
 }
 
-void Resources::clearNonState()
+void Resources::clearNonStateButFilePool()
 {
     Impl& impl = *impl_;
     impl.curves = CurveSet::createPredefined();
-    impl.filePool.clear();
     impl.wavePool.clearFileWaves();
     impl.modMatrix.clear();
     impl.metronome.clear();

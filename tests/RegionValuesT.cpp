@@ -72,7 +72,7 @@ TEST_CASE("Read values", "[parsing][OSC]")
             <region> sample=kick.wav direction=reverse
         )");
         REQUIRE(d.read<std::string>("/region0/sample") == "*sine");
-        REQUIRE(d.read<std::string>("/region1/sample") == "kick.wav");
+        REQUIRE(d.read<std::string>("/region1/sample") == fs::current_path() / "tests/TestFiles/kick.wav");
         REQUIRE(d.read<std::string>("/region1/direction") == "forward");
         REQUIRE(d.read<std::string>("/region2/direction") == "reverse");
     }

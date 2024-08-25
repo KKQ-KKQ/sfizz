@@ -104,7 +104,7 @@ TEST_CASE("[FilePool] Shared samples")
     CHECK(synth1->getNumPreloadedSamples() == 1);
     CHECK(synth2->getNumPreloadedSamples() == 1);
     CHECK(synth3->getNumPreloadedSamples() == 0);
-    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 2);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 1);
 
     synth3->loadSfzFile(fs::current_path() / "tests/TestFiles/wavetables.sfz");
 
@@ -117,7 +117,7 @@ TEST_CASE("[FilePool] Shared samples")
     CHECK(synth1->getNumPreloadedSamples() == 1);
     CHECK(synth2->getNumPreloadedSamples() == 1);
     CHECK(synth3->getNumPreloadedSamples() == 4);
-    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 6);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 5);
 
     synth1->loadSfzFile(fs::current_path() / "tests/TestFiles/wavetables.sfz");
     for (unsigned i = 0; i < 100; ++i) {
@@ -131,14 +131,14 @@ TEST_CASE("[FilePool] Shared samples")
     CHECK(synth1->getNumPreloadedSamples() == 4);
     CHECK(synth2->getNumPreloadedSamples() == 1);
     CHECK(synth3->getNumPreloadedSamples() == 4);
-    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 5);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 4);
 
     // Release
     synth3.reset();
     wait_ms(1100);
     CHECK(synth1->getNumPreloadedSamples() == 4);
     CHECK(synth2->getNumPreloadedSamples() == 1);
-    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 5);
+    CHECK(filePoolGlobalObj->getNumLoadedSamples() == 4);
 
     synth1.reset();
     synth2.reset();

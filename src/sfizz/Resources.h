@@ -34,7 +34,7 @@ public:
      * @brief Clear resources that are related to a currently loaded SFZ file
      *
      */
-    void clearNonState();
+    void clearNonStateButFilePool();
     /**
      * @brief Clear resources that are unrelated to the currently loaded SFZ file,
      *        i.e. midi state and beat clock.

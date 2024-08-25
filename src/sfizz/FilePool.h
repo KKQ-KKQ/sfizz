@@ -57,7 +57,6 @@ using FileAudioBufferPtr = std::unique_ptr<FileAudioBuffer>;
 
 struct FileInformation {
     int64_t end { Default::sampleEnd };
-    int64_t maxOffset { 0 };
     int64_t loopStart { Default::loopStart };
     int64_t loopEnd { Default::loopEnd };
     bool hasLoop { false };
@@ -89,7 +88,7 @@ struct FileData
     FileData(FileData&& other) = delete;
     FileData& operator=(FileData&& other) = delete;
 
-    void initWith(Status newStatus, FileAudioBufferPtr preloaded, const FileInformation& info) {
+    void initWith(Status newStatus, FileAudioBufferPtr preloaded, const FileInformation& info, bool fully) {
         // safely for 4 times preloadsize change
         preloadedDataToClear.reserve(config::maxPreloadDataClearBufferSize);
         information = info;
@@ -99,10 +98,11 @@ struct FileData
             std::lock_guard<std::mutex> guard { readyMutex };
             ready = true;
         }
+        fullyLoaded = fully;
         readyCond.notify_all();
     }
 
-    bool replaceAndGetOldMaxPreloadSize(const FilePool* owner, uint32_t preloadSize);
+    bool replaceAndGetOldMaxPreloadSize(const FilePool* owner, uint32_t& preloadSize);
     void prepareForRemovingOwner(const FilePool* owner);
     bool checkAndRemoveOwner(const FilePool* owner);
     bool addSecondaryOwner(const FilePool* owner, uint32_t preloadSize, bool& needsReloading);
@@ -110,7 +110,7 @@ struct FileData
     bool isReady() { return ready; }
 
     FileAudioBuffer& getPreloadedData();
-    void replacePreloadedData(FileAudioBuffer&& newPreloadedData);
+    void replacePreloadedData(FileAudioBuffer&& newPreloadedData, bool fullyLoaded);
 
 private:
     FileAudioBufferPtr preloadedData { new FileAudioBuffer() };
@@ -125,7 +125,12 @@ private:
     std::mutex ownerMutex;
     int preloadCallCount { 0 };
     // store preload size + 1
-    std::map<const FilePool*, uint32_t> ownerPreloadSizeMap;
+
+    struct OwnerPreloadSizeData {
+        uint32_t size;
+        bool checkReleaseFlag;
+    };
+    std::map<const FilePool*, OwnerPreloadSizeData> ownerPreloadSizeMap;
 
 public:
     std::atomic<Status> status { Status::Invalid };
@@ -135,7 +140,7 @@ public:
     static constexpr uint32_t lockedReaderCount = std::numeric_limits<uint32_t>::max();
     std::chrono::time_point<std::chrono::high_resolution_clock> lastViewerLeftAt;
     std::atomic<uint32_t> preloadedDataReaderCount { 0 };
-    static constexpr uint32_t maxPreloadSize = std::numeric_limits<uint32_t>::max() - 1;
+    static constexpr uint32_t maxPreloadSize = std::numeric_limits<uint32_t>::max();
     std::vector<FileAudioBufferPtr> preloadedDataToClear;
 
     LEAK_DETECTOR(FileData);
@@ -228,7 +233,7 @@ public:
      *
      * @return size_t
      */
-    size_t getNumPreloadedSamples() const noexcept { return preloadedFiles.size() + loadedFiles.size(); }
+    size_t getNumPreloadedSamples() const noexcept { return loadedFiles.size(); }
 
     /**
      * @brief Get metadata information about a file.
@@ -254,9 +259,10 @@ public:
      * data for future requests so use this function responsibly.
      *
      * @param fileId
+     * @param size
      * @return A handle on the file data
      */
-    FileDataHolder loadFile(const FileId& fileId) noexcept;
+    std::shared_ptr<FileData> loadFile(const FileId& fileId, uint32_t size = FileData::maxPreloadSize) noexcept;
 
     /**
      * @brief Load a file from RAM and return its information. The file pool will store\
@@ -394,7 +400,7 @@ public:
 
         public:
         size_t getNumLoadedSamples() {
-            return loadedFiles.size() + preloadedFiles.size();
+            return loadedFiles.size();
         }
 
         private:
@@ -408,11 +414,9 @@ public:
 
         std::unique_ptr<ThreadPool> threadPool;
 
-        std::mutex loadedFilesMutex;
-        std::mutex preloadedFilesMutex;
+        std::mutex mutex;
 
         // Preloaded data
-        absl::flat_hash_map<FileId, std::shared_ptr<FileData>> preloadedFiles;
         absl::flat_hash_map<FileId, std::shared_ptr<FileData>> loadedFiles;
     };
     static std::shared_ptr<GlobalObject> getGlobalObject();
@@ -423,8 +427,9 @@ private:
     static std::mutex globalObjectMutex;
 
     // Preloaded data
-    absl::flat_hash_map<FileId, std::shared_ptr<FileData>> preloadedFiles;
     absl::flat_hash_map<FileId, std::shared_ptr<FileData>> loadedFiles;
+
+    absl::flat_hash_map<FileId, uint32_t> maxOffsetMap;
 
     const SynthConfig& synthConfig;
     LEAK_DETECTOR(FilePool);

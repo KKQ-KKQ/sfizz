@@ -283,7 +283,7 @@ void Synth::Impl::clear()
     currentSet_ = nullptr;
     sets_.clear();
     layers_.clear();
-    resources_.clearNonState();
+    resources_.clearNonStateButFilePool();
     rootPath_.clear();
     numGroups_ = 0;
     numMasters_ = 0;
@@ -729,6 +729,11 @@ void Synth::Impl::finalizeSfzLoad()
 
     FlexEGs::clearUnusedCurves();
 
+    // Reset the preload call count to check for unused preloaded samples
+    // when reloading
+    if (reloading)
+        filePool.resetPreloadCallCounts();
+
     while (currentRegionIndex < currentRegionCount) {
         Layer& layer = *layers_[currentRegionIndex];
         Region& region = layer.getRegion();
@@ -750,7 +755,7 @@ void Synth::Impl::finalizeSfzLoad()
             region.hasWavetableSample = fileInformation->wavetable.has_value();
 
             if (fileInformation->end < config::wavetableMaxFrames) {
-                auto sample = filePool.loadFile(*region.sampleId);
+                FileDataHolder sample { filePool.loadFile(*region.sampleId) };
                 bool allZeros = true;
                 int numChannels = sample->information.numChannels;
                 auto& preloadedData = sample->getPreloadedData();
@@ -888,11 +893,6 @@ void Synth::Impl::finalizeSfzLoad()
 
         ++currentRegionIndex;
     }
-
-    // Reset the preload call count to check for unused preloaded samples
-    // when reloading
-    if (reloading)
-        filePool.resetPreloadCallCounts();
 
     for (const auto& toLoad: filesToLoad)
         filePool.preloadFile(toLoad.first, toLoad.second);
